@@ -12,6 +12,7 @@ from ..utils.lora_catalog import lora_catalog
 from ..utils.base_model_mapping import base_model_mapper
 from ..utils.indexing_llm import index_with_llm, suggest_base_family_with_llm
 from ..utils.show_info_generator import generate_info_files_for_catalog
+from ..utils.model_fetcher import fetch_all_available_models, parse_model_string
 
 
 class LoRAManager:
@@ -25,26 +26,8 @@ class LoRAManager:
     def INPUT_TYPES(cls):
         """Define input types for the node."""
         
-        # LLM provider options
-        providers = ["groq", "gemini"]
-        
-        # Get models for each provider
-        groq_models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "deepseek-r1-distill-llama-70b",
-            "qwen-qwq-32b",
-            "gemma2-9b-it"
-        ]
-        
-        gemini_models = [
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
-            "gemini-2.0-flash-exp"
-        ]
-        
-        all_models = groq_models + gemini_models
+        # Fetch all available models from both providers
+        all_models, vision_models = fetch_all_available_models()
         
         # Get indexed LoRA names
         try:
@@ -61,55 +44,57 @@ class LoRAManager:
             "required": {
                 "action": (["Scan & Index New LoRAs", "Re-index Selected LoRA", "Generate Info Files", "View Catalog Stats"], {
                     "default": "Scan & Index New LoRAs",
-                    "tooltip": "Select action to perform"
-                }),
-                "indexing_provider": (providers, {
-                    "default": "groq",
-                    "tooltip": "LLM provider for indexing"
+                    "tooltip": "Choose what action to perform: Scan & Index finds new LoRAs and processes them with AI. Re-index updates a specific LoRA. Generate Info Files creates rgthree-compatible files. View Stats shows your collection overview."
                 }),
                 "indexing_model": (all_models, {
-                    "default": "llama-3.1-8b-instant",
-                    "tooltip": "Model to use for indexing"
+                    "default": all_models[0] if all_models else "groq: llama-3.1-8b-instant",
+                    "tooltip": "LLM model for analyzing LoRA metadata. Extracts summaries, triggers, and tags from Civitai descriptions. Recommended: groq: llama-3.1-8b-instant for speed and accuracy."
                 }),
             },
             "optional": {
                 "selected_lora": (lora_names, {
                     "default": lora_names[0] if lora_names else "No LoRAs indexed",
-                    "tooltip": "Select a LoRA to re-index or edit"
+                    "tooltip": "Select a specific LoRA to re-index or edit. Only used with 'Re-index Selected LoRA' action."
                 }),
                 "force_reindex": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Force re-index even if already indexed"
+                    "tooltip": "Force re-indexing even if LoRA was already processed. Use this to update metadata with a better model or after manual Civitai updates."
+                }),
+                "max_index_count": ("INT", {
+                    "default": 999,
+                    "min": 1,
+                    "max": 999,
+                    "tooltip": "Maximum number of LoRAs to index at once. Use a lower number (e.g., 10) for testing to avoid long processing times or API rate limits."
                 }),
                 "edit_base_model": (families, {
                     "default": "Unknown",
-                    "tooltip": "Manually set base model family for selected LoRA"
+                    "tooltip": "Manually override the base model family for the selected LoRA. Choose the model family this LoRA was trained for (e.g., Flux-1, SDXL, SD1.5)."
                 }),
                 "edit_summary": ("STRING", {
                     "multiline": True,
                     "default": "",
-                    "tooltip": "Manually edit LoRA summary"
+                    "tooltip": "Manually edit the LoRA's description/summary. Describe what this LoRA does in one concise sentence."
                 }),
                 "edit_triggers": ("STRING", {
                     "multiline": False,
                     "default": "",
-                    "tooltip": "Manually edit trigger words (comma-separated)"
+                    "tooltip": "Manually edit trigger words (comma-separated). These are the activation words needed to use this LoRA. Example: 'cyberpunk style, neon lights, futuristic'"
                 }),
                 "edit_tags": ("STRING", {
                     "multiline": False,
                     "default": "",
-                    "tooltip": "Manually edit tags (comma-separated)"
+                    "tooltip": "Manually edit tags (comma-separated). Keywords describing the LoRA's style, theme, or features. Example: 'scifi, urban, lighting, atmosphere'"
                 }),
                 "edit_weight": ("FLOAT", {
                     "default": 1.0,
                     "min": 0.0,
                     "max": 2.0,
                     "step": 0.1,
-                    "tooltip": "Default weight for this LoRA"
+                    "tooltip": "Default weight/strength for this LoRA. Most LoRAs work best at 0.7-1.0. Lower values (0.3-0.7) for subtle effects, higher (1.0-1.5) for strong effects."
                 }),
-                "mark_as_character": ("BOOLEAN", {
+                "disable_lora": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Mark this LoRA as a character LoRA (won't be auto-selected)"
+                    "tooltip": "Disable this LoRA from auto-selection. Disabled LoRAs won't be chosen by the AI but can still be manually applied. Use this instead of deleting LoRAs you don't want auto-selected."
                 }),
             }
         }
@@ -124,16 +109,16 @@ class LoRAManager:
     def manage_loras(
         self,
         action: str,
-        indexing_provider: str,
         indexing_model: str,
         selected_lora: str = "",
         force_reindex: bool = False,
+        max_index_count: int = 999,
         edit_base_model: str = "Unknown",
         edit_summary: str = "",
         edit_triggers: str = "",
         edit_tags: str = "",
         edit_weight: float = 1.0,
-        mark_as_character: bool = False
+        disable_lora: bool = False
     ) -> Tuple[str]:
         """
         Manage LoRA catalog.
@@ -146,12 +131,11 @@ class LoRAManager:
         print("="*60)
         
         if action == "Scan & Index New LoRAs":
-            return self._scan_and_index(indexing_provider, indexing_model)
+            return self._scan_and_index(indexing_model, max_index_count)
         
         elif action == "Re-index Selected LoRA":
             return self._reindex_selected(
                 selected_lora,
-                indexing_provider,
                 indexing_model,
                 force_reindex,
                 edit_base_model,
@@ -159,7 +143,7 @@ class LoRAManager:
                 edit_triggers,
                 edit_tags,
                 edit_weight,
-                mark_as_character
+                disable_lora
             )
         
         elif action == "Generate Info Files":
@@ -171,9 +155,12 @@ class LoRAManager:
         else:
             return (f"Unknown action: {action}",)
     
-    def _scan_and_index(self, provider: str, model: str) -> Tuple[str]:
+    def _scan_and_index(self, indexing_model: str, max_count: int) -> Tuple[str]:
         """Scan for new LoRAs and index them."""
         print("[Manager] Scanning for new LoRAs...")
+        
+        # Parse provider and model from prefixed string
+        provider, model_name = parse_model_string(indexing_model)
         
         new_files = lora_catalog.detect_new_loras()
         
@@ -182,7 +169,12 @@ class LoRAManager:
             print(msg)
             return (msg,)
         
-        print(f"[Manager] Found {len(new_files)} new LoRA(s)")
+        # Limit by max_count
+        if len(new_files) > max_count:
+            print(f"[Manager] Limiting to first {max_count} of {len(new_files)} LoRAs")
+            new_files = new_files[:max_count]
+        
+        print(f"[Manager] Found {len(new_files)} new LoRA(s) to index")
         
         # Get API key
         if provider == "groq":
@@ -222,7 +214,7 @@ class LoRAManager:
                 success, extracted, error = index_with_llm(
                     civitai_text=civitai_text,
                     provider_name=provider,
-                    model_name=model,
+                    model_name=model_name,
                     api_key=api_key,
                     known_families=known_families
                 )
@@ -233,7 +225,7 @@ class LoRAManager:
                         civitai_text=civitai_text,
                         known_families=known_families,
                         provider_name=provider,
-                        model_name=model,
+                        model_name=model_name,
                         api_key=api_key
                     )
                     
@@ -264,19 +256,21 @@ class LoRAManager:
     def _reindex_selected(
         self,
         lora_name: str,
-        provider: str,
-        model: str,
+        indexing_model: str,
         force: bool,
         base_model: str,
         summary: str,
         triggers: str,
         tags: str,
         weight: float,
-        is_character: bool
+        is_disabled: bool
     ) -> Tuple[str]:
         """Re-index or edit a selected LoRA."""
         if not lora_name or lora_name == "No LoRAs indexed":
             return ("⚠️ No LoRA selected",)
+        
+        # Parse provider and model from prefixed string
+        provider, model_name = parse_model_string(indexing_model)
         
         # Find entry by filename
         entry = None
@@ -305,12 +299,13 @@ class LoRAManager:
                 trained_words=trigger_list,
                 tags=tag_list,
                 base_compat=[base_model] if base_model != "Unknown" else entry.get('base_compat', ['Unknown']),
-                is_character=is_character
+                is_character=False  # Not used anymore, keeping for compatibility
             )
             
-            # Update weight
+            # Update weight and disabled status
             if file_hash in lora_catalog.catalog:
                 lora_catalog.catalog[file_hash]['default_weight'] = weight
+                lora_catalog.catalog[file_hash]['disabled'] = is_disabled
             
             lora_catalog.save_catalog()
             
@@ -344,7 +339,7 @@ class LoRAManager:
         success, extracted, error = index_with_llm(
             civitai_text=civitai_text,
             provider_name=provider,
-            model_name=model,
+            model_name=model_name,
             api_key=api_key,
             known_families=known_families
         )
@@ -357,21 +352,25 @@ class LoRAManager:
             civitai_text=civitai_text,
             known_families=known_families,
             provider_name=provider,
-            model_name=model,
+            model_name=model_name,
             api_key=api_key
         )
         
         base_compat = [base_family] if base_family != 'Unknown' else ['Unknown']
         
-        # Update catalog
+        # Update catalog with disabled status
         lora_catalog.mark_llm_indexed(
             file_hash=file_hash,
             summary=extracted['summary'],
             trained_words=extracted['trainedWords'],
             tags=extracted['tags'],
             base_compat=base_compat,
-            is_character=is_character
+            is_character=False  # Not used anymore, keeping for compatibility
         )
+        
+        # Set disabled status
+        if file_hash in lora_catalog.catalog:
+            lora_catalog.catalog[file_hash]['disabled'] = is_disabled
         
         lora_catalog.save_catalog()
         

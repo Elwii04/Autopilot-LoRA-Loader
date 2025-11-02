@@ -64,29 +64,28 @@ Restart ComfyUI to load the new node.
 
 1. **Add the Node**: Search for "Smart Power LoRA Loader" in the node menu
 2. **Connect Inputs**: Connect your MODEL and CLIP inputs
-3. **Set Base Context**: Write your creative idea/prompt in the `base_context` field
+3. **Set Prompt**: Write your creative idea/prompt in the `prompt` field
 4. **Select Base Model**: Choose your base model family (e.g., "Flux-1", "SDXL", "SD1.x")
-5. **Configure LLMs**: Select LLM provider and model for indexing and prompting
+5. **Configure LLMs**: Select indexing and prompting models from the dropdowns (all providers shown)
 6. **Run**: The node will auto-select LoRAs and generate a complete prompt
 
 ### Inputs
 
 #### Required
-- **base_context** (STRING): Your creative idea or rough prompt
+- **prompt** (STRING): Your creative idea or prompt for image/video generation
 - **base_model** (DROPDOWN): Base model family (auto-populated from your LoRAs)
-- **autoselect** (BOOLEAN): Enable automatic LoRA selection
-- **indexing_provider** / **indexing_model**: LLM for indexing new LoRAs (text-only)
-- **prompting_provider** / **prompting_model**: LLM for prompt generation (can support vision)
+- **indexing_model** (DROPDOWN): LLM model for indexing new LoRAs (shows all available models with provider prefix)
+- **prompting_model** (DROPDOWN): LLM model for prompt generation and LoRA selection (supports vision models)
 
 #### Optional
 - **model** (MODEL): Input model to apply LoRAs to
 - **clip** (CLIP): Input CLIP to apply LoRAs to
-- **init_image** (IMAGE): Reference image for vision models
-- **allowlist_loras** (STRING): Comma-separated list of LoRAs allowed for auto-selection (empty = all)
+- **image** (IMAGE): Reference image for vision models
 - **manual_loras** (STRING): Comma-separated list of LoRAs to always apply (e.g., character LoRAs)
-- **reindex_on_run** (BOOLEAN): Detect and index new LoRA files each run
+- **reindex_on_run** (BOOLEAN): Detect and index new LoRA files each run (default: False)
+- **enable_negative_prompt** (BOOLEAN): Generate AI-powered negative prompt (default: False)
 - **temperature** (FLOAT): LLM temperature for creativity (0.0-2.0)
-- **max_loras** (INT): Maximum number of LoRAs to auto-select
+- **max_loras** (INT): Maximum number of LoRAs to auto-select (default: 5)
 - **trigger_position** (DROPDOWN): Where to place trigger words ("start", "end", "llm_decides")
 
 ### Outputs
@@ -115,17 +114,16 @@ When you add new LoRAs to your folder:
 5. **Storage**: Saves to `data/lora_index.json` catalog
 6. **RGThree Compatibility**: Generates `.rgthree-info.json` for each LoRA
 
-### 2. Selection Phase (Every Run with autoselect=True)
+### 2. Selection Phase (Every Run)
 
 1. **Filtering**:
    - Filter by selected base model family
-   - Apply allowlist (if provided)
-   - Exclude character LoRAs (reserved for manual selection)
-2. **Pre-Ranking**: Fuzzy token overlap between your context and LoRA metadata
+   - Exclude disabled LoRAs
+2. **Pre-Ranking**: Fuzzy token overlap between your prompt and LoRA metadata
 3. **LLM Selection**: 
    - Sends top 30 candidates to prompting LLM
-   - LLM selects up to 6 most relevant LoRAs
-   - Optionally analyzes reference image if provided
+   - LLM selects up to max_loras (default: 5) most relevant LoRAs
+   - Optionally analyzes reference image if provided with vision models
 4. **Merging**: Combines manual + auto-selected LoRAs (manual first, deduplicated)
 
 ### 3. Prompt Generation
@@ -174,39 +172,29 @@ The node recognizes these base model families:
 
 ### Vision Model Requirements
 
-To use the `init_image` input, you must select a vision-capable model for prompting:
-- Groq: `llama-4-maverick` or `llama-4-scout`
+To use the `image` input, you must select a vision-capable model for prompting:
+- Groq: Models with "vision" in the name (shown in dropdown)
 - Gemini: `gemini-1.5-pro`, `gemini-1.5-flash`, or `gemini-2.0-flash-exp`
 
 ## Tips & Best Practices
 
 ### For Best Results
 
-1. **Be Specific in Context**: The more detailed your `base_context`, the better the LoRA selection
-2. **Use Allowlist for Control**: Create allowlists for different workflows (e.g., only clothing LoRAs)
-3. **Manual for Characters**: Always use `manual_loras` for character LoRAs to ensure consistency
-4. **Temperature Tuning**:
+1. **Be Specific in Prompt**: The more detailed your `prompt`, the better the LoRA selection
+2. **Manual for Characters**: Always use `manual_loras` for character LoRAs to ensure consistency
+3. **Temperature Tuning**:
    - Lower (0.3-0.5): More conservative, consistent selection
    - Higher (0.8-1.0): More creative, varied results
-5. **Vision Models**: Provide reference images for style/composition matching
+4. **Vision Models**: Provide reference images for style/composition matching
+5. **Disable Unused LoRAs**: Use LoRA Manager to disable LoRAs you don't want auto-selected
 
 ### Character vs Concept LoRAs
 
-The node distinguishes between:
-- **Concept LoRAs**: Clothing, objects, styles (auto-selectable)
-- **Character LoRAs**: Specific characters (manual only)
+The node handles:
+- **Concept LoRAs**: Clothing, objects, styles (auto-selected by AI)
+- **Character LoRAs**: Specific characters (add to `manual_loras`)
 
-Mark character LoRAs by adding them to `manual_loras` input.
-
-### Allowlist Examples
-
-```
-# Only style LoRAs
-style_lora_1.safetensors, style_lora_2.safetensors, aesthetic_lora.safetensors
-
-# Only clothing LoRAs
-dress_lora.safetensors, shirt_lora.safetensors, pants_lora.safetensors
-```
+Use the LoRA Manager node to disable character LoRAs from auto-selection if needed.
 
 ## Troubleshooting
 
@@ -225,7 +213,7 @@ dress_lora.safetensors, shirt_lora.safetensors, pants_lora.safetensors
 ### No LoRAs Selected
 
 - Check that LoRAs match the selected base model family
-- Verify `allowlist_loras` isn't too restrictive
+- Verify disabled LoRAs in catalog (use LoRA Manager to enable)
 - Try increasing `temperature` for more creative selection
 - Check console for indexing errors
 
@@ -233,7 +221,7 @@ dress_lora.safetensors, shirt_lora.safetensors, pants_lora.safetensors
 
 - Groq: Very generous rate limits, shouldn't be an issue
 - Gemini: Has rate limits on free tier; wait and retry
-- Consider using faster models for indexing
+- Consider using faster models for indexing (e.g., `groq: llama-3.1-8b-instant`)
 
 ### LoRAs Not Applied
 

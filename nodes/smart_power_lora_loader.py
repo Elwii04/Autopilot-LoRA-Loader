@@ -23,6 +23,7 @@ from ..utils.lora_applicator import apply_loras_to_model_clip
 from ..utils.prompt_builder import build_final_prompt, build_prompt_from_llm_output
 from ..utils.show_info_generator import generate_info_files_for_catalog
 from ..utils.civitai_utils import build_civitai_summary_text
+from ..utils.model_fetcher import fetch_all_available_models, parse_model_string
 
 # Try to import ComfyUI modules
 try:
@@ -52,7 +53,7 @@ class SmartPowerLoRALoader:
         except:
             families = base_model_mapper.get_all_families()
         
-        # Get all LoRA filenames for allowlist and manual selection
+        # Get all LoRA filenames for manual selection
         try:
             all_loras = [entry['file'] for entry in lora_catalog.get_all_entries()]
             if not all_loras:
@@ -60,112 +61,83 @@ class SmartPowerLoRALoader:
         except:
             all_loras = ["Error loading LoRAs"]
         
-        # LLM provider options
-        providers = ["groq", "gemini"]
-        
-        # Get models for each provider (simplified - will be dynamic in practice)
-        groq_models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "deepseek-r1-distill-llama-70b",
-            "qwen-qwq-32b",
-            "gemma2-9b-it"
-        ]
-        
-        groq_vision_models = [
-            "meta-llama/llama-4-maverick-17b-128e-instruct",
-            "meta-llama/llama-4-scout-17b-16e-instruct"
-        ]
-        
-        gemini_models = [
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
-            "gemini-2.0-flash-exp"
-        ]
+        # Fetch all available models from both providers
+        all_models, vision_models = fetch_all_available_models()
         
         return {
             "required": {
-                "base_context": ("STRING", {
+                "prompt": ("STRING", {
                     "multiline": True,
                     "default": "A beautiful landscape at sunset",
-                    "tooltip": "Your idea/context for image generation"
+                    "tooltip": "Your creative idea or prompt for image/video generation. Describe what you want to create, and the AI will select relevant LoRAs and expand this into a detailed prompt."
                 }),
                 "base_model": (families, {
                     "default": families[0] if families else "Unknown",
-                    "tooltip": "Select the base model family"
+                    "tooltip": "Select your base model family (e.g., Flux-1, SDXL, Qwen-Image). This filters LoRAs to only those compatible with your chosen model. For example, Flux LoRAs won't work with SDXL models."
                 }),
-                "autoselect": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable automatic LoRA selection"
+                "indexing_model": (all_models, {
+                    "default": all_models[0] if all_models else "groq: llama-3.1-8b-instant",
+                    "tooltip": "LLM model to use for indexing new LoRAs. This analyzes Civitai metadata to extract summaries, trigger words, and tags. Recommended: groq: llama-3.1-8b-instant (fast and accurate)."
                 }),
-                "indexing_provider": (providers, {
-                    "default": "groq",
-                    "tooltip": "LLM provider for indexing new LoRAs"
-                }),
-                "indexing_model": (groq_models, {
-                    "default": "llama-3.1-8b-instant",
-                    "tooltip": "Model for indexing (text-only)"
-                }),
-                "prompting_provider": (providers, {
-                    "default": "groq",
-                    "tooltip": "LLM provider for prompt generation"
-                }),
-                "prompting_model": (groq_vision_models + gemini_models, {
-                    "default": "gemini-1.5-flash",
-                    "tooltip": "Model for prompting (can support vision)"
+                "prompting_model": (all_models, {
+                    "default": "gemini: gemini-1.5-flash" if "gemini: gemini-1.5-flash" in all_models else all_models[0],
+                    "tooltip": "LLM model for generating prompts and selecting LoRAs. If using an image input, choose a vision-capable model (e.g., gemini: gemini-1.5-flash). Otherwise any model works."
                 }),
             },
             "optional": {
-                "model": ("MODEL", {"tooltip": "Input model to apply LoRAs to"}),
-                "clip": ("CLIP", {"tooltip": "Input CLIP to apply LoRAs to"}),
-                "init_image": ("IMAGE", {"tooltip": "Optional reference image for vision models"}),
-                "allowlist_loras": ("STRING", {
-                    "multiline": True,
-                    "default": "",
-                    "tooltip": "Comma-separated list of LoRAs allowed for auto-selection (empty = all)"
+                "model": ("MODEL", {
+                    "tooltip": "Input MODEL from your checkpoint loader. LoRAs will be applied to this model and returned."
                 }),
-                "manual_loras": ("STRING", {
-                    "multiline": True,
-                    "default": "",
-                    "tooltip": "Comma-separated list of LoRAs to always apply (e.g., character LoRAs)"
+                "clip": ("CLIP", {
+                    "tooltip": "Input CLIP from your checkpoint loader. LoRAs will be applied to CLIP and returned."
                 }),
-                "system_prompt": ("STRING", {
-                    "multiline": True,
-                    "default": "",
-                    "tooltip": "Override system prompt for the prompting LLM (empty = use default)"
+                "image": ("IMAGE", {
+                    "tooltip": "Optional reference image for vision-capable models. The AI can analyze this image to better select relevant LoRAs and generate contextual prompts. Requires a vision model (e.g., gemini: gemini-1.5-flash)."
+                }),
+                "manual_loras": (all_loras, {
+                    "default": all_loras[0] if all_loras else "No LoRAs indexed yet",
+                    "tooltip": "Force-apply specific LoRAs (e.g., character LoRAs) that you always want included, regardless of AI selection. These will be applied in addition to auto-selected LoRAs. Separate multiple with commas if typing manually."
                 }),
                 "custom_instruction": ("STRING", {
                     "multiline": True,
                     "default": "",
-                    "tooltip": "Custom instruction for prompt style/format (empty = use default)"
+                    "tooltip": "Override the default prompting instructions. Define your desired prompt style, length, and format here. Example: 'Create a minimalist 50-word prompt focusing on mood'. Leave empty to use the default cinematic 80-100 word style."
+                }),
+                "system_prompt": ("STRING", {
+                    "multiline": True,
+                    "default": "",
+                    "tooltip": "Override the system prompt that defines the LLM's role. This sets the AI's personality and capabilities. Example: 'You are a professional cinematographer'. Leave empty to use the default prompt expert role."
+                }),
+                "enable_negative_prompt": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Generate a negative prompt output. Enable this for older models (SD1.5, SDXL) that benefit from negative prompts. Modern models (Flux, Qwen) typically don't need this."
                 }),
                 "reindex_on_run": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Detect and index new LoRA files on each run"
+                    "default": False,
+                    "tooltip": "Automatically detect and index new LoRA files when you run this node. Turn OFF after initial indexing to improve performance. Use the LoRA Manager node for manual indexing control."
                 }),
                 "temperature": ("FLOAT", {
                     "default": 0.85,
                     "min": 0.0,
                     "max": 2.0,
                     "step": 0.05,
-                    "tooltip": "LLM temperature for prompt generation"
+                    "tooltip": "LLM creativity level. Higher = more creative/varied prompts (0.8-1.2), Lower = more focused/consistent prompts (0.3-0.7). Default 0.85 works well for most cases."
                 }),
                 "max_loras": ("INT", {
                     "default": 6,
                     "min": 1,
                     "max": 20,
-                    "tooltip": "Maximum LoRAs to auto-select"
+                    "tooltip": "Maximum number of LoRAs to auto-select. More LoRAs = more complex generations but can cause conflicts. Recommended: 3-6 for best results. Character LoRAs don't count toward this limit."
                 }),
-                "trigger_position": (["start", "end", "llm_decides"], {
+                "trigger_position": (["llm_decides", "start", "end"], {
                     "default": "llm_decides",
-                    "tooltip": "Where to place trigger words in prompt"
+                    "tooltip": "Where to place trigger words in the prompt. 'llm_decides' (recommended): AI integrates them naturally. 'start': All triggers at beginning. 'end': All triggers at end."
                 }),
             }
         }
     
     RETURN_TYPES = ("MODEL", "CLIP", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("MODEL", "CLIP", "final_prompt", "negative_prompt", "selected_loras_json")
+    RETURN_NAMES = ("MODEL", "CLIP", "prompt", "negative_prompt", "selected_loras_json")
     FUNCTION = "process"
     CATEGORY = "loaders/Autopilot LoRA"
     DESCRIPTION = "Smart LoRA loader with automatic selection and LLM-powered prompt generation"
@@ -177,21 +149,18 @@ class SmartPowerLoRALoader:
     
     def process(
         self,
-        base_context: str,
+        prompt: str,
         base_model: str,
-        autoselect: bool,
-        indexing_provider: str,
         indexing_model: str,
-        prompting_provider: str,
         prompting_model: str,
         model: Any = None,
         clip: Any = None,
-        init_image: Any = None,
-        allowlist_loras: str = "",
+        image: Any = None,
         manual_loras: str = "",
-        system_prompt: str = "",
         custom_instruction: str = "",
-        reindex_on_run: bool = True,
+        system_prompt: str = "",
+        enable_negative_prompt: bool = False,
+        reindex_on_run: bool = False,
         temperature: float = 0.85,
         max_loras: int = 6,
         trigger_position: str = "llm_decides"
@@ -206,9 +175,13 @@ class SmartPowerLoRALoader:
         print("SmartPowerLoRALoader Processing")
         print("="*60)
         
+        # Parse provider and model from prefixed strings
+        indexing_provider, indexing_model_name = parse_model_string(indexing_model)
+        prompting_provider, prompting_model_name = parse_model_string(prompting_model)
+        
         # Step 1: Reindex if needed
         if reindex_on_run and not self.indexing_done:
-            self._reindex_new_loras(indexing_provider, indexing_model)
+            self._reindex_new_loras(indexing_provider, indexing_model_name)
             self.indexing_done = True
         
         # Step 2: Parse manual LoRAs
@@ -216,43 +189,61 @@ class SmartPowerLoRALoader:
         manual_lora_entries = lora_catalog.filter_by_names(manual_lora_list)
         print(f"Manual LoRAs: {len(manual_lora_entries)}")
         
-        # Step 3: Auto-select LoRAs (if enabled)
+        # Step 3: Auto-select LoRAs (always enabled now)
         auto_selected_entries = []
-        final_prompt = base_context
+        final_prompt = prompt
         negative_prompt = ""
         
-        if autoselect:
-            auto_selected_entries = self._autoselect_loras(
-                base_context=base_context,
-                base_model=base_model,
-                allowlist_loras=allowlist_loras,
-                prompting_provider=prompting_provider,
-                prompting_model=prompting_model,
-                init_image=init_image,
-                temperature=temperature,
-                max_loras=max_loras,
-                system_prompt=system_prompt,
-                custom_instruction=custom_instruction
-            )
-            
-            print(f"Auto-selected LoRAs: {len(auto_selected_entries)}")
+        # Always do auto-selection
+        auto_selected_entries = self._autoselect_loras(
+            base_context=prompt,
+            base_model=base_model,
+            allowlist_loras="",  # Removed allowlist feature for now
+            prompting_provider=prompting_provider,
+            prompting_model=prompting_model_name,
+            init_image=image,
+            temperature=temperature,
+            max_loras=max_loras,
+            system_prompt=system_prompt,
+            custom_instruction=custom_instruction
+        )
+        
+        print(f"Auto-selected LoRAs: {len(auto_selected_entries)}")
         
         # Step 4: Merge manual + auto LoRAs
         all_selected = merge_manual_and_auto_loras(manual_lora_entries, auto_selected_entries)
         print(f"Total LoRAs to apply: {len(all_selected)}")
         
         # Step 5: Build prompt
-        if trigger_position == "llm_decides" and autoselect:
+        if trigger_position == "llm_decides":
             # LLM already generated the prompt
-            final_prompt = getattr(self, '_llm_generated_prompt', base_context)
+            final_prompt = getattr(self, '_llm_generated_prompt', prompt)
             negative_prompt = getattr(self, '_llm_generated_negative', "")
         else:
-            # Build prompt with triggers
+            # Build prompt with triggers at specific position
             final_prompt = build_final_prompt(
-                base_context=base_context,
+                base_context=prompt,
                 selected_loras=all_selected,
-                insert_position=trigger_position if trigger_position != "llm_decides" else "start"
+                insert_position=trigger_position
             )
+        
+        # Step 6: Apply LoRAs to model and clip
+        if model is not None and clip is not None and all_selected:
+            model, clip = apply_loras_to_model_clip(model, clip, all_selected)
+        elif model is None or clip is None:
+            print("[SmartPowerLoRALoader] Warning: MODEL or CLIP not provided, LoRAs not applied")
+        
+        # Step 7: Handle negative prompt
+        if not enable_negative_prompt:
+            negative_prompt = ""
+        
+        # Step 8: Build selection JSON for debugging
+        selection_json = self._build_selection_json(all_selected, manual_lora_list)
+        
+        print(f"Final prompt length: {len(final_prompt)} chars")
+        print("="*60 + "\n")
+        
+        return (model, clip, final_prompt, negative_prompt, selection_json)
         
         # Step 6: Apply LoRAs to model and clip
         if model is not None and clip is not None and all_selected:
@@ -363,10 +354,6 @@ class SmartPowerLoRALoader:
             else:
                 print(f"[Indexing] ⚠️ No Civitai data available, indexed with basic metadata only")
             
-            # Save after each LoRA (preserve progress)
-            lora_catalog.save_catalog()
-            print(f"[Indexing] Progress: {idx}/{total_files} LoRAs processed")
-        
             # Save after each LoRA (preserve progress)
             lora_catalog.save_catalog()
             print(f"[Indexing] Progress: {idx}/{total_files} LoRAs processed")
