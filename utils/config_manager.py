@@ -17,6 +17,29 @@ class ConfigManager:
         self.env_path = self.root_dir / '.env'
         self.env_example_path = self.root_dir / '.env.example'
         
+        # Create .env from .env.example if it doesn't exist
+        if not self.env_path.exists():
+            if self.env_example_path.exists():
+                # Copy example file
+                import shutil
+                shutil.copy(self.env_example_path, self.env_path)
+                print(f"[SmartPowerLoRALoader] Created .env file from .env.example at {self.env_path}")
+                print(f"[SmartPowerLoRALoader] Please edit .env and add your API keys")
+            else:
+                # Create default .env
+                default_content = """# API Keys for LLM Providers
+# Add your API keys below
+
+# Groq API Key (get from: https://console.groq.com)
+GROQ_API_KEY=your_groq_api_key_here
+
+# Google Gemini API Key (get from: https://aistudio.google.com/apikey)
+GEMINI_API_KEY=your_gemini_api_key_here
+"""
+                self.env_path.write_text(default_content)
+                print(f"[SmartPowerLoRALoader] Created default .env file at {self.env_path}")
+                print(f"[SmartPowerLoRALoader] Please edit .env and add your API keys")
+        
         # Load environment variables
         if self.env_path.exists():
             load_dotenv(self.env_path)
@@ -47,6 +70,16 @@ class ConfigManager:
         if not api_key or api_key == 'your_gemini_api_key_here':
             return None
         return api_key
+    
+    @property
+    def groq_api_key(self) -> Optional[str]:
+        """Property for backward compatibility."""
+        return self.get_groq_api_key()
+    
+    @property
+    def gemini_api_key(self) -> Optional[str]:
+        """Property for backward compatibility."""
+        return self.get_gemini_api_key()
     
     def validate_api_keys(self, provider: str) -> tuple[bool, str]:
         """
