@@ -1,9 +1,8 @@
 import { app } from "../../scripts/app.js";
-import { ComfyWidgets } from "../../scripts/widgets.js";
 import { api } from "../../scripts/api.js";
 
 // Name of our node type
-const NODE_NAME = "⚡ Smart Power LoRA Loader";
+const NODE_NAME = "SmartPowerLoRALoader";
 
 // Store available LoRAs globally
 let availableLoras = [];
@@ -12,16 +11,24 @@ let availableLoras = [];
 async function getAvailableLoras() {
     if (availableLoras.length === 0) {
         try {
-            // Use ComfyUI's object_info to get LoRA list
+            // Use ComfyUI's folder_paths API to get LoRAs
+            const response = await api.fetchApi('/folder_paths');
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.loras) {
+                    availableLoras = data.loras;
+                    return availableLoras;
+                }
+            }
+            
+            // Fallback: Use object_info to get LoRA list
             const objectInfo = await api.getObjectInfo();
-            // Look for any LoRA loader node to get the lora list
             for (const nodeType in objectInfo) {
                 const nodeDef = objectInfo[nodeType];
                 if (nodeDef.input && nodeDef.input.required) {
                     for (const inputName in nodeDef.input.required) {
                         const inputDef = nodeDef.input.required[inputName];
                         if (Array.isArray(inputDef) && inputDef[0] && Array.isArray(inputDef[0])) {
-                            // Check if this looks like a LoRA list (contains .safetensors files)
                             const firstItem = inputDef[0][0] || "";
                             if (typeof firstItem === 'string' && firstItem.includes('.safetensors')) {
                                 availableLoras = inputDef[0];
@@ -51,17 +58,16 @@ async function getLoraInfo(loraName) {
     return null;
 }
 
-// Show LoRA chooser dialog
+// Show LoRA chooser dialog (properly centered)
 function showLoraChooser(callback, currentValue = null) {
     const dialog = document.createElement('div');
-    dialog.className = 'comfy-modal';
     dialog.style.cssText = `
         position: fixed;
         top: 0;
         left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.7);
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.8);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -70,19 +76,19 @@ function showLoraChooser(callback, currentValue = null) {
 
     const content = document.createElement('div');
     content.style.cssText = `
-        background: #1e1e1e;
-        border: 1px solid #444;
-        border-radius: 4px;
+        background: #202020;
+        border: 2px solid #444;
+        border-radius: 8px;
         padding: 20px;
-        max-width: 500px;
-        max-height: 600px;
+        width: 500px;
+        max-height: 80vh;
         overflow: auto;
-        color: #fff;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     `;
 
     const title = document.createElement('h3');
     title.textContent = 'Select LoRA';
-    title.style.marginTop = '0';
+    title.style.cssText = 'margin: 0 0 15px 0; color: #fff; font-size: 18px;';
     content.appendChild(title);
 
     const search = document.createElement('input');
@@ -90,12 +96,14 @@ function showLoraChooser(callback, currentValue = null) {
     search.placeholder = 'Search LoRAs...';
     search.style.cssText = `
         width: 100%;
-        padding: 8px;
-        margin-bottom: 10px;
+        padding: 10px;
+        margin-bottom: 15px;
         background: #2a2a2a;
         border: 1px solid #444;
         color: #fff;
-        border-radius: 3px;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
     `;
     content.appendChild(search);
 
@@ -103,6 +111,7 @@ function showLoraChooser(callback, currentValue = null) {
     list.style.cssText = `
         max-height: 400px;
         overflow-y: auto;
+        margin-bottom: 15px;
     `;
 
     function updateList(filter = '') {
@@ -111,17 +120,27 @@ function showLoraChooser(callback, currentValue = null) {
             lora.toLowerCase().includes(filter.toLowerCase())
         );
 
+        if (filtered.length === 0) {
+            const noResults = document.createElement('div');
+            noResults.textContent = 'No LoRAs found';
+            noResults.style.cssText = 'padding: 20px; text-align: center; color: #888;';
+            list.appendChild(noResults);
+            return;
+        }
+
         filtered.forEach(lora => {
             const item = document.createElement('div');
             item.textContent = lora;
             item.style.cssText = `
-                padding: 8px;
+                padding: 10px;
                 cursor: pointer;
                 border-bottom: 1px solid #333;
-                ${lora === currentValue ? 'background: #444;' : ''}
+                color: #fff;
+                transition: background 0.2s;
+                ${lora === currentValue ? 'background: #3a5a7a;' : ''}
             `;
-            item.onmouseenter = () => item.style.background = '#444';
-            item.onmouseleave = () => item.style.background = lora === currentValue ? '#444' : 'transparent';
+            item.onmouseenter = () => item.style.background = '#3a5a7a';
+            item.onmouseleave = () => item.style.background = lora === currentValue ? '#3a5a7a' : 'transparent';
             item.onclick = () => {
                 callback(lora);
                 document.body.removeChild(dialog);
@@ -134,18 +153,21 @@ function showLoraChooser(callback, currentValue = null) {
     content.appendChild(list);
 
     const buttonContainer = document.createElement('div');
-    buttonContainer.style.cssText = 'margin-top: 10px; text-align: right;';
+    buttonContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px;';
     
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
     cancelBtn.style.cssText = `
-        padding: 8px 16px;
+        padding: 10px 20px;
         background: #444;
         border: none;
         color: #fff;
-        border-radius: 3px;
+        border-radius: 4px;
         cursor: pointer;
+        font-size: 14px;
     `;
+    cancelBtn.onmouseenter = () => cancelBtn.style.background = '#555';
+    cancelBtn.onmouseleave = () => cancelBtn.style.background = '#444';
     cancelBtn.onclick = () => document.body.removeChild(dialog);
     buttonContainer.appendChild(cancelBtn);
 
@@ -341,141 +363,328 @@ function showLoraInfoDialog(loraName, catalogInfo) {
     document.body.appendChild(dialog);
 }
 
-// Custom widget for manual LoRA selection
-function ManualLoraWidget(node, inputName, inputData, app) {
-    const widget = {
-        type: "manual_loras_selector",
-        name: inputName,
-        value: [],
-        draw: function(ctx, node, width, posY, height) {
-            // Draw a summary of selected LoRAs
-            ctx.save();
-            ctx.fillStyle = "#666";
-            ctx.font = "12px Arial";
-            ctx.textAlign = "left";
-            
-            const text = this.value.length > 0 
-                ? `${this.value.length} manual LoRA(s) selected`
-                : "Click 'Add Manual LoRA' button below";
-            
-            ctx.fillText(text, 15, posY + height / 2);
-            ctx.restore();
-        },
-        computeSize: function(width) {
-            return [width, 25];
-        },
-        serializeValue: function() {
-            // Convert array to comma-separated string for Python
-            return this.value.map(lora => lora.name).join(',');
+// Custom LoRA Widget (like rgthree's PowerLoraLoaderWidget)
+class ManualLoraWidget {
+    constructor(name, node) {
+        this.name = name;
+        this.type = "manual_lora";
+        this.node = node;
+        this.value = {
+            lora: "None",
+            strength: 1.0,
+            on: true
+        };
+        this.y = 0;
+        this.options = { serialize: true };
+    }
+
+    draw(ctx, node, widgetWidth, posY, widgetHeight) {
+        const margin = 15;
+        const midY = posY + widgetHeight / 2;
+        
+        ctx.save();
+        ctx.fillStyle = "#222";
+        ctx.fillRect(margin, posY, widgetWidth - margin * 2, widgetHeight);
+        ctx.strokeStyle = "#444";
+        ctx.strokeRect(margin, posY, widgetWidth - margin * 2, widgetHeight);
+        
+        // Toggle button
+        const toggleSize = 16;
+        const toggleX = margin + 10;
+        ctx.fillStyle = this.value.on ? "#4a7" : "#666";
+        ctx.beginPath();
+        ctx.arc(toggleX + toggleSize/2, midY, toggleSize/2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // LoRA name (clickable)
+        const nameX = toggleX + toggleSize + 10;
+        const nameWidth = widgetWidth - nameX - 120 - margin * 2;
+        ctx.fillStyle = this.value.on ? "#fff" : "#888";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        const displayName = this.value.lora || "None";
+        const truncated = displayName.length > 30 ? displayName.substring(0, 27) + "..." : displayName;
+        ctx.fillText(truncated, nameX, midY);
+        
+        // Strength controls
+        const strengthX = widgetWidth - margin - 100;
+        ctx.fillStyle = this.value.on ? "#fff" : "#888";
+        ctx.textAlign = "center";
+        
+        // Decrease button
+        ctx.fillStyle = "#444";
+        ctx.fillRect(strengthX, posY + 8, 25, widgetHeight - 16);
+        ctx.fillStyle = this.value.on ? "#fff" : "#888";
+        ctx.fillText("-", strengthX + 12.5, midY);
+        
+        // Value display
+        ctx.fillStyle = "#333";
+        ctx.fillRect(strengthX + 28, posY + 8, 40, widgetHeight - 16);
+        ctx.fillStyle = this.value.on ? "#fff" : "#888";
+        ctx.fillText(this.value.strength.toFixed(2), strengthX + 48, midY);
+        
+        // Increase button
+        ctx.fillStyle = "#444";
+        ctx.fillRect(strengthX + 71, posY + 8, 25, widgetHeight - 16);
+        ctx.fillStyle = this.value.on ? "#fff" : "#888";
+        ctx.fillText("+", strengthX + 83.5, midY);
+        
+        ctx.restore();
+        
+        // Store hit areas for mouse events
+        this.hitAreas = {
+            toggle: [toggleX, posY, toggleSize + 20, widgetHeight],
+            lora: [nameX, posY, nameWidth, widgetHeight],
+            decrease: [strengthX, posY + 8, 25, widgetHeight - 16],
+            value: [strengthX + 28, posY + 8, 40, widgetHeight - 16],
+            increase: [strengthX + 71, posY + 8, 25, widgetHeight - 16]
+        };
+        
+        this.last_y = posY;
+    }
+
+    mouse(event, pos, node) {
+        if (!this.hitAreas) return false;
+        
+        const [x, y] = pos;
+        const localY = y - this.last_y;
+        
+        // Check toggle
+        const [tx, ty, tw, th] = this.hitAreas.toggle;
+        if (x >= tx && x <= tx + tw && localY >= 0 && localY <= th) {
+            if (event.type === "pointerdown") {
+                this.value.on = !this.value.on;
+                node.setDirtyCanvas(true, true);
+                return true;
+            }
         }
-    };
-    
-    widget.value = [];
-    return widget;
+        
+        // Check LoRA name (open chooser)
+        const [lx, ly, lw, lh] = this.hitAreas.lora;
+        if (x >= lx && x <= lx + lw && localY >= 0 && localY <= lh) {
+            if (event.type === "pointerdown") {
+                showLoraChooser((selectedLora) => {
+                    this.value.lora = selectedLora;
+                    node.setDirtyCanvas(true, true);
+                }, this.value.lora);
+                return true;
+            }
+        }
+        
+        // Check decrease button
+        const [dx, dy, dw, dh] = this.hitAreas.decrease;
+        if (x >= dx && x <= dx + dw && localY >= dy - this.last_y && localY <= dy - this.last_y + dh) {
+            if (event.type === "pointerdown") {
+                this.value.strength = Math.max(0, Math.round((this.value.strength - 0.05) * 100) / 100);
+                node.setDirtyCanvas(true, true);
+                return true;
+            }
+        }
+        
+        // Check value (open input)
+        const [vx, vy, vw, vh] = this.hitAreas.value;
+        if (x >= vx && x <= vx + vw && localY >= vy - this.last_y && localY <= vy - this.last_y + vh) {
+            if (event.type === "pointerdown") {
+                const newValue = prompt("Enter strength value:", this.value.strength);
+                if (newValue !== null) {
+                    const parsed = parseFloat(newValue);
+                    if (!isNaN(parsed)) {
+                        this.value.strength = Math.round(parsed * 100) / 100;
+                        node.setDirtyCanvas(true, true);
+                    }
+                }
+                return true;
+            }
+        }
+        
+        // Check increase button
+        const [ix, iy, iw, ih] = this.hitAreas.increase;
+        if (x >= ix && x <= ix + iw && localY >= iy - this.last_y && localY <= iy - this.last_y + ih) {
+            if (event.type === "pointerdown") {
+                this.value.strength = Math.round((this.value.strength + 0.05) * 100) / 100;
+                node.setDirtyCanvas(true, true);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    computeSize(width) {
+        return [width, 35];
+    }
+
+    serializeValue() {
+        return this.value;
+    }
 }
 
 // Register the extension
 app.registerExtension({
-    name: "autopilot.lora.loader",
+    name: "autopilot.smart.power.lora.loader",
     
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "SmartPowerLoRALoader") {
-            // Store original onNodeCreated
+        if (nodeData.name === NODE_NAME) {
+            // Load available LoRAs on startup
+            await getAvailableLoras();
+            
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             
-            nodeType.prototype.onNodeCreated = async function() {
-                const result = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
+            nodeType.prototype.onNodeCreated = function() {
+                const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
                 
-                // Load available LoRAs
-                await getAvailableLoras();
-                
-                // Find the manual_loras widget
+                // Hide the manual_loras text widget
                 const manualLorasWidget = this.widgets?.find(w => w.name === "manual_loras");
                 if (manualLorasWidget) {
-                    // Store original type
-                    manualLorasWidget.originalType = manualLorasWidget.type;
-                    
-                    // Initialize array if string
-                    if (typeof manualLorasWidget.value === 'string') {
-                        const loraNames = manualLorasWidget.value.split(',').map(s => s.trim()).filter(s => s);
-                        manualLorasWidget.value = loraNames.map(name => ({ name, weight: 1.0 }));
-                    } else if (!Array.isArray(manualLorasWidget.value)) {
-                        manualLorasWidget.value = [];
-                    }
-                    
-                    // Override serializeValue to convert back to string
-                    const originalSerialize = manualLorasWidget.serializeValue;
-                    manualLorasWidget.serializeValue = function() {
-                        if (Array.isArray(this.value)) {
-                            return this.value.map(lora => lora.name).join(',');
-                        }
-                        return this.value;
-                    };
+                    // Hide it by making it 0 height
+                    manualLorasWidget.computeSize = () => [0, -4];
+                    manualLorasWidget.type = "converted-widget";
+                    manualLorasWidget.hidden = true;
                 }
                 
+                // Store manual LoRA widgets
+                this.manualLoraWidgets = [];
+                this.manualLoraCounter = 0;
+                
                 // Add "Add Manual LoRA" button
-                const addLoraBtn = this.addWidget("button", "➕ Add Manual LoRA", null, () => {
-                    showLoraChooser((selectedLora) => {
-                        if (manualLorasWidget) {
-                            if (!Array.isArray(manualLorasWidget.value)) {
-                                manualLorasWidget.value = [];
-                            }
-                            // Check if not already added
-                            if (!manualLorasWidget.value.find(l => l.name === selectedLora)) {
-                                manualLorasWidget.value.push({ name: selectedLora, weight: 1.0 });
-                                this.setDirtyCanvas(true, true);
-                            }
-                        }
-                    });
+                const addBtn = this.addWidget("button", "➕ Add Manual LoRA", null, () => {
+                    const widget = new ManualLoraWidget("manual_lora_" + this.manualLoraCounter++, this);
+                    this.manualLoraWidgets.push(widget);
+                    
+                    // Insert before the buttons
+                    const buttonIndex = this.widgets.findIndex(w => w.name === "➕ Add Manual LoRA");
+                    if (buttonIndex >= 0) {
+                        this.widgets.splice(buttonIndex, 0, widget);
+                    } else {
+                        this.widgets.push(widget);
+                    }
+                    
+                    this.setSize(this.computeSize());
+                    this.setDirtyCanvas(true, true);
                 });
                 
-                // Add button to manage manual LoRAs
-                const manageBtn = this.addWidget("button", "📋 Manage Manual LoRAs", null, () => {
-                    showManualLorasManager(this, manualLorasWidget);
-                });
+                // Position Add button above "Show LoRA Catalog"
+                const addBtnIndex = this.widgets.findIndex(w => w === addBtn);
+                if (addBtnIndex >= 0) {
+                    this.widgets.splice(addBtnIndex, 1);
+                    this.widgets.splice(this.widgets.length - 1, 0, addBtn);
+                }
                 
-                // Add "Show LoRA Catalog" button at the end
-                const showInfoBtn = this.addWidget("button", "ℹ️ Show LoRA Catalog", null, async () => {
+                // Add "Show LoRA Catalog" button at the very bottom
+                const catalogBtn = this.addWidget("button", "ℹ️ Show LoRA Catalog", null, async () => {
                     await showLoraCatalogDialog(this);
                 });
                 
-                return result;
+                return r;
             };
             
-            // Add context menu for node
-            const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-            nodeType.prototype.getExtraMenuOptions = function(_, options) {
-                if (origGetExtraMenuOptions) {
-                    origGetExtraMenuOptions.apply(this, arguments);
+            // Override serialize to convert manual LoRA widgets to string
+            const onSerialize = nodeType.prototype.onSerialize;
+            nodeType.prototype.onSerialize = function(o) {
+                if (onSerialize) {
+                    onSerialize.apply(this, arguments);
                 }
                 
-                options.push({
-                    content: "ℹ️ Show LoRA Catalog",
-                    callback: async () => {
-                        await showLoraCatalogDialog(this);
+                // Collect manual LoRAs and convert to comma-separated string
+                const manualLoras = [];
+                for (const widget of this.widgets || []) {
+                    if (widget.type === "manual_lora" && widget.value.lora !== "None" && widget.value.on) {
+                        manualLoras.push(widget.value.lora);
                     }
-                });
+                }
+                
+                // Find and update the hidden manual_loras widget
+                const manualLorasWidget = this.widgets?.find(w => w.name === "manual_loras");
+                if (manualLorasWidget) {
+                    manualLorasWidget.value = manualLoras.join(',');
+                }
+                
+                // Update widgets_values to include manual LoRAs string
+                if (o.widgets_values) {
+                    const manualLorasIndex = this.widgets?.findIndex(w => w.name === "manual_loras");
+                    if (manualLorasIndex >= 0) {
+                        o.widgets_values[manualLorasIndex] = manualLoras.join(',');
+                    }
+                }
+                
+                return o;
+            };
+            
+            // Add context menu option
+            const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+                if (getExtraMenuOptions) {
+                    getExtraMenuOptions.apply(this, arguments);
+                }
+                
+                options.push(
+                    null, // Separator
+                    {
+                        content: "Toggle All Manual LoRAs",
+                        callback: () => {
+                            let anyOn = false;
+                            for (const widget of this.widgets || []) {
+                                if (widget.type === "manual_lora") {
+                                    if (widget.value.on) anyOn = true;
+                                }
+                            }
+                            // Toggle all to opposite of current state
+                            const newState = !anyOn;
+                            for (const widget of this.widgets || []) {
+                                if (widget.type === "manual_lora") {
+                                    widget.value.on = newState;
+                                }
+                            }
+                            this.setDirtyCanvas(true, true);
+                        }
+                    },
+                    {
+                        content: "Clear All Manual LoRAs",
+                        callback: () => {
+                            // Remove all manual LoRA widgets
+                            this.widgets = this.widgets.filter(w => w.type !== "manual_lora");
+                            this.manualLoraWidgets = [];
+                            this.setSize(this.computeSize());
+                            this.setDirtyCanvas(true, true);
+                        }
+                    },
+                    null, // Separator
+                    {
+                        content: "ℹ️ Show LoRA Catalog",
+                        callback: async () => {
+                            await showLoraCatalogDialog(this);
+                        }
+                    }
+                );
             };
         }
     }
 });
 
-// Show manager for manual LoRAs
-function showManualLorasManager(node, widget) {
-    if (!widget || !Array.isArray(widget.value)) {
-        alert("No manual LoRAs to manage");
-        return;
+// Fetch LoRA catalog info
+async function getLoraInfo(loraName) {
+    try {
+        const response = await api.fetchApi('/autopilot_lora/info?file=' + encodeURIComponent(loraName));
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        console.warn("[Autopilot LoRA] Could not fetch info for:", loraName, error);
     }
+    return null;
+}
 
+// Show LoRA info dialog (properly centered)
+function showLoraInfoDialog(loraName, catalogInfo) {
     const dialog = document.createElement('div');
-    dialog.className = 'comfy-modal';
     dialog.style.cssText = `
         position: fixed;
         top: 0;
         left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.7);
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.8);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -484,109 +693,150 @@ function showManualLorasManager(node, widget) {
 
     const content = document.createElement('div');
     content.style.cssText = `
-        background: #1e1e1e;
-        border: 1px solid #444;
-        border-radius: 4px;
+        background: #202020;
+        border: 2px solid #444;
+        border-radius: 8px;
         padding: 20px;
-        max-width: 600px;
-        max-height: 600px;
+        width: 600px;
+        max-height: 80vh;
         overflow: auto;
-        color: #fff;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     `;
 
-    const title = document.createElement('h3');
-    title.textContent = 'Manage Manual LoRAs';
-    title.style.marginTop = '0';
+    const title = document.createElement('h2');
+    title.textContent = catalogInfo?.display_name || loraName;
+    title.style.cssText = 'margin: 0 0 15px 0; color: #fff; font-size: 20px;';
     content.appendChild(title);
 
-    const list = document.createElement('div');
-    list.style.cssText = 'margin: 15px 0;';
+    if (catalogInfo) {
+        // Summary
+        if (catalogInfo.summary) {
+            const summaryLabel = document.createElement('h3');
+            summaryLabel.textContent = 'Summary';
+            summaryLabel.style.cssText = 'color: #aaa; font-size: 14px; margin: 10px 0 5px 0;';
+            content.appendChild(summaryLabel);
 
-    function refreshList() {
-        list.innerHTML = '';
-        
-        if (widget.value.length === 0) {
-            const empty = document.createElement('p');
-            empty.textContent = 'No manual LoRAs selected';
-            empty.style.color = '#888';
-            list.appendChild(empty);
-            return;
+            const summary = document.createElement('p');
+            summary.textContent = catalogInfo.summary;
+            summary.style.cssText = 'margin: 0 0 15px 0; color: #fff; line-height: 1.5;';
+            content.appendChild(summary);
         }
 
-        widget.value.forEach((lora, index) => {
-            const item = document.createElement('div');
-            item.style.cssText = `
-                padding: 10px;
-                background: #2a2a2a;
-                margin-bottom: 8px;
-                border-radius: 3px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            `;
+        // Trigger Words
+        if (catalogInfo.trained_words && catalogInfo.trained_words.length > 0) {
+            const triggerLabel = document.createElement('h3');
+            triggerLabel.textContent = 'Trigger Words';
+            triggerLabel.style.cssText = 'color: #aaa; font-size: 14px; margin: 15px 0 8px 0;';
+            content.appendChild(triggerLabel);
 
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = lora.name;
-            nameSpan.style.flex = '1';
-            item.appendChild(nameSpan);
+            const triggers = document.createElement('div');
+            triggers.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px;';
+            catalogInfo.trained_words.forEach(word => {
+                const tag = document.createElement('span');
+                tag.textContent = word;
+                tag.style.cssText = `
+                    background: #3a5a7a;
+                    padding: 5px 10px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    color: #fff;
+                `;
+                triggers.appendChild(tag);
+            });
+            content.appendChild(triggers);
+        }
 
-            const btnContainer = document.createElement('div');
-            btnContainer.style.cssText = 'display: flex; gap: 5px;';
+        // Tags
+        if (catalogInfo.tags && catalogInfo.tags.length > 0) {
+            const tagsLabel = document.createElement('h3');
+            tagsLabel.textContent = 'Tags';
+            tagsLabel.style.cssText = 'color: #aaa; font-size: 14px; margin: 15px 0 8px 0;';
+            content.appendChild(tagsLabel);
 
-            const infoBtn = document.createElement('button');
-            infoBtn.textContent = 'ℹ️';
-            infoBtn.title = 'Show Info';
-            infoBtn.style.cssText = `
-                padding: 4px 8px;
-                background: #2a5a8a;
-                border: none;
+            const tags = document.createElement('div');
+            tags.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px;';
+            catalogInfo.tags.forEach(tag => {
+                const tagEl = document.createElement('span');
+                tagEl.textContent = tag;
+                tagEl.style.cssText = `
+                    background: #444;
+                    padding: 5px 10px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    color: #ccc;
+                `;
+                tags.appendChild(tagEl);
+            });
+            content.appendChild(tags);
+        }
+
+        // Base Model
+        if (catalogInfo.base_compat && catalogInfo.base_compat.length > 0) {
+            const baseLabel = document.createElement('h3');
+            baseLabel.textContent = 'Base Model';
+            baseLabel.style.cssText = 'color: #aaa; font-size: 14px; margin: 15px 0 5px 0;';
+            content.appendChild(baseLabel);
+
+            const baseModel = document.createElement('p');
+            baseModel.textContent = catalogInfo.base_compat.join(', ');
+            baseModel.style.cssText = 'margin: 0 0 15px 0; color: #fff;';
+            content.appendChild(baseModel);
+        }
+
+        // Weight
+        if (catalogInfo.default_weight != null) {
+            const weightLabel = document.createElement('h3');
+            weightLabel.textContent = 'Default Weight';
+            weightLabel.style.cssText = 'color: #aaa; font-size: 14px; margin: 15px 0 5px 0;';
+            content.appendChild(weightLabel);
+
+            const weight = document.createElement('p');
+            weight.textContent = catalogInfo.default_weight.toFixed(2);
+            weight.style.cssText = 'margin: 0 0 15px 0; color: #fff;';
+            content.appendChild(weight);
+        }
+
+        // Civitai Link
+        if (catalogInfo.civitai_model_id) {
+            const link = document.createElement('a');
+            link.href = `https://civitai.com/models/${catalogInfo.civitai_model_id}`;
+            link.target = '_blank';
+            link.textContent = '🔗 View on Civitai';
+            link.style.cssText = `
+                display: inline-block;
+                margin-top: 10px;
+                padding: 10px 15px;
+                background: #3a5a7a;
                 color: #fff;
-                border-radius: 3px;
-                cursor: pointer;
+                text-decoration: none;
+                border-radius: 4px;
             `;
-            infoBtn.onclick = async () => {
-                const info = await getLoraInfo(lora.name);
-                showLoraInfoDialog(lora.name, info);
-            };
-            btnContainer.appendChild(infoBtn);
-
-            const removeBtn = document.createElement('button');
-            removeBtn.textContent = '🗑️';
-            removeBtn.title = 'Remove';
-            removeBtn.style.cssText = `
-                padding: 4px 8px;
-                background: #8a2a2a;
-                border: none;
-                color: #fff;
-                border-radius: 3px;
-                cursor: pointer;
-            `;
-            removeBtn.onclick = () => {
-                widget.value.splice(index, 1);
-                refreshList();
-                node.setDirtyCanvas(true, true);
-            };
-            btnContainer.appendChild(removeBtn);
-
-            item.appendChild(btnContainer);
-            list.appendChild(item);
-        });
+            link.onmouseenter = () => link.style.background = '#4a6a8a';
+            link.onmouseleave = () => link.style.background = '#3a5a7a';
+            content.appendChild(link);
+        }
+    } else {
+        const noInfo = document.createElement('p');
+        noInfo.textContent = 'No catalog information available. Run indexing first.';
+        noInfo.style.cssText = 'color: #888; margin: 20px 0;';
+        content.appendChild(noInfo);
     }
-
-    refreshList();
-    content.appendChild(list);
 
     const closeBtn = document.createElement('button');
     closeBtn.textContent = 'Close';
     closeBtn.style.cssText = `
-        padding: 8px 16px;
+        margin-top: 20px;
+        padding: 10px 20px;
         background: #444;
         border: none;
         color: #fff;
-        border-radius: 3px;
+        border-radius: 4px;
         cursor: pointer;
         width: 100%;
+        font-size: 14px;
     `;
+    closeBtn.onmouseenter = () => closeBtn.style.background = '#555';
+    closeBtn.onmouseleave = () => closeBtn.style.background = '#444';
     closeBtn.onclick = () => document.body.removeChild(dialog);
     content.appendChild(closeBtn);
 
@@ -600,21 +850,20 @@ function showManualLorasManager(node, widget) {
     document.body.appendChild(dialog);
 }
 
-// Show full LoRA catalog dialog
+// Show full LoRA catalog dialog (properly centered)
 async function showLoraCatalogDialog(node) {
     try {
         const response = await api.fetchApi('/autopilot_lora/catalog');
         const catalog = response.ok ? await response.json() : {};
 
         const dialog = document.createElement('div');
-        dialog.className = 'comfy-modal';
         dialog.style.cssText = `
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.8);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -623,20 +872,20 @@ async function showLoraCatalogDialog(node) {
 
         const content = document.createElement('div');
         content.style.cssText = `
-            background: #1e1e1e;
-            border: 1px solid #444;
-            border-radius: 4px;
+            background: #202020;
+            border: 2px solid #444;
+            border-radius: 8px;
             padding: 20px;
-            width: 80%;
+            width: 85%;
             max-width: 900px;
-            height: 80%;
+            height: 85vh;
             overflow: auto;
-            color: #fff;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         `;
 
         const title = document.createElement('h2');
         title.textContent = 'LoRA Catalog';
-        title.style.marginTop = '0';
+        title.style.cssText = 'margin: 0 0 15px 0; color: #fff; font-size: 22px;';
         content.appendChild(title);
 
         const search = document.createElement('input');
@@ -644,17 +893,19 @@ async function showLoraCatalogDialog(node) {
         search.placeholder = 'Search LoRAs...';
         search.style.cssText = `
             width: 100%;
-            padding: 8px;
+            padding: 10px;
             margin-bottom: 15px;
             background: #2a2a2a;
             border: 1px solid #444;
             color: #fff;
-            border-radius: 3px;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
         `;
         content.appendChild(search);
 
         const catalogList = document.createElement('div');
-        catalogList.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+        catalogList.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;';
 
         function displayCatalog(filter = '') {
             catalogList.innerHTML = '';
@@ -669,7 +920,7 @@ async function showLoraCatalogDialog(node) {
             if (filtered.length === 0) {
                 const noResults = document.createElement('p');
                 noResults.textContent = filter ? 'No matching LoRAs found' : 'No LoRAs in catalog. Run indexing first.';
-                noResults.style.color = '#888';
+                noResults.style.cssText = 'color: #888; padding: 20px; text-align: center;';
                 catalogList.appendChild(noResults);
                 return;
             }
@@ -679,11 +930,12 @@ async function showLoraCatalogDialog(node) {
                 item.style.cssText = `
                     padding: 15px;
                     background: #2a2a2a;
-                    border-radius: 4px;
+                    border-radius: 6px;
                     cursor: pointer;
                     transition: background 0.2s;
+                    border: 1px solid #333;
                 `;
-                item.onmouseenter = () => item.style.background = '#333';
+                item.onmouseenter = () => item.style.background = '#353535';
                 item.onmouseleave = () => item.style.background = '#2a2a2a';
                 item.onclick = () => showLoraInfoDialog(entry.file, entry);
 
@@ -726,15 +978,18 @@ async function showLoraCatalogDialog(node) {
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         closeBtn.style.cssText = `
-            margin-top: 20px;
-            padding: 8px 16px;
+            margin-top: 15px;
+            padding: 10px 20px;
             background: #444;
             border: none;
             color: #fff;
-            border-radius: 3px;
+            border-radius: 4px;
             cursor: pointer;
             width: 100%;
+            font-size: 14px;
         `;
+        closeBtn.onmouseenter = () => closeBtn.style.background = '#555';
+        closeBtn.onmouseleave = () => closeBtn.style.background = '#444';
         closeBtn.onclick = () => document.body.removeChild(dialog);
         content.appendChild(closeBtn);
 
