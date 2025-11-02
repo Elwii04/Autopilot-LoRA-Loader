@@ -949,8 +949,8 @@ function showLoraInfoDialog(loraName, catalogInfo) {
     title.style.cssText = 'margin: 0 0 15px 0; color: #fff; font-size: 20px;';
     content.appendChild(title);
 
-    if (catalogInfo && catalogInfo.file_hash) {
-        // Edit mode
+    if (catalogInfo && (catalogInfo.file_hash || catalogInfo.file)) {
+        // Edit mode - works for both indexed (has file_hash) and non-indexed (has file) LoRAs
         let isEditing = false;
         
         // Summary
@@ -1074,16 +1074,19 @@ function showLoraInfoDialog(loraName, catalogInfo) {
 
         // Base Model
         const baseLabel = document.createElement('h3');
-        baseLabel.textContent = 'Base Model';
+        baseLabel.textContent = 'Base Models (can select multiple)';
         baseLabel.style.cssText = 'color: #aaa; font-size: 14px; margin: 15px 0 5px 0;';
         content.appendChild(baseLabel);
 
         const baseModel = document.createElement('p');
-        baseModel.textContent = catalogInfo.base_compat ? catalogInfo.base_compat.join(', ') : 'Unknown';
+        baseModel.textContent = catalogInfo.base_compat ? catalogInfo.base_compat.join(', ') : 'Other';
         baseModel.style.cssText = 'margin: 0 0 15px 0; color: #fff;';
         content.appendChild(baseModel);
 
+        // Multiple select for base models
         const baseModelSelect = document.createElement('select');
+        baseModelSelect.multiple = true;
+        baseModelSelect.size = 8;
         baseModelSelect.style.cssText = `
             width: 100%;
             margin-bottom: 15px;
@@ -1096,17 +1099,24 @@ function showLoraInfoDialog(loraName, catalogInfo) {
             box-sizing: border-box;
             display: none;
         `;
-        // All available base model families
-        const baseModelFamilies = [
-            'Unknown', 'Flux-1', 'SD1.x', 'SD2.x', 'SDXL', 'Qwen-Image', 'Qwen-Image-Edit',
-            'Wan-Video 1.x', 'Wan-Video 2.2', 'Wan-Video 2.5', 'AuraFlow', 'PixArt',
-            'Kolors', 'Hunyuan', 'Lumina', 'Playground', 'CogVideoX', 'Mochi', 'LTX-Video'
+        // All available base models from screenshot
+        const baseModels = [
+            'Aura Flow', 'Chroma', 'CogVideoX', 'Flux .1 S', 'Flux .1 D',
+            'Flux .1 Krea', 'Flux .1 Kontext', 'HiDream', 'Hunyuan 1',
+            'Hunyuan Video', 'Illustrious', 'Kolors', 'LTXV', 'Lumina',
+            'Mochi', 'NoobAI', 'Other', 'PixArt α', 'PixArt Σ', 'Pony',
+            'Pony V7', 'Qwen', 'SD 1.4', 'SD 1.5', 'SD 1.5 LCM',
+            'SD 1.5 Hyper', 'SD 2.0', 'SD 2.1', 'SDXL 1.0', 'SDXL Lightning',
+            'SDXL Hyper', 'Wan Video 1.3B t2v', 'Wan Video 1.4B t2v',
+            'Wan Video 1.4B i2v 480p', 'Wan Video 1.4B i2v 720p',
+            'Wan Video 2.2 T12V-5B', 'Wan Video 2.2 I2V-A14B',
+            'Wan Video 2.2 T2V-A14B', 'Wan Video 2.5 T2V', 'Wan Video 2.5 I2V'
         ];
-        baseModelFamilies.forEach(family => {
+        baseModels.forEach(model => {
             const option = document.createElement('option');
-            option.value = family;
-            option.textContent = family;
-            if (catalogInfo.base_compat && catalogInfo.base_compat.includes(family)) {
+            option.value = model;
+            option.textContent = model;
+            if (catalogInfo.base_compat && catalogInfo.base_compat.includes(model)) {
                 option.selected = true;
             }
             baseModelSelect.appendChild(option);
@@ -1205,14 +1215,23 @@ function showLoraInfoDialog(loraName, catalogInfo) {
                 closeBtn.textContent = 'Cancel';
             } else {
                 // Save changes
+                // Get all selected base models
+                const selectedModels = Array.from(baseModelSelect.selectedOptions).map(opt => opt.value);
+                
                 const updateData = {
-                    file_hash: catalogInfo.file_hash,
                     summary: summaryInput.value,
                     trained_words: triggersInput.value.split(',').map(t => t.trim()).filter(t => t),
                     tags: tagsInput.value.split(',').map(t => t.trim()).filter(t => t),
-                    base_compat: [baseModelSelect.value],
+                    base_compat: selectedModels.length > 0 ? selectedModels : ['Other'],
                     default_weight: parseFloat(weightInput.value)
                 };
+                
+                // Include file_hash if available, otherwise file_name
+                if (catalogInfo.file_hash) {
+                    updateData.file_hash = catalogInfo.file_hash;
+                } else if (catalogInfo.file) {
+                    updateData.file_name = catalogInfo.file;
+                }
 
                 api.fetchApi('/autopilot_lora/update', {
                     method: 'POST',

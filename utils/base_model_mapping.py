@@ -1,215 +1,198 @@
 """
-Base Model Family Normalization
-Maps various base model names to standardized families for LoRA compatibility.
+Base Model Mapping
+Maps various base model names to standardized model identifiers for LoRA compatibility.
 """
 from typing import Optional, List, Set
 
 
-# Base model family definitions
-BASE_MODEL_FAMILIES = {
-    'Flux-1': [
-        'flux', 'flux-1', 'flux.1', 'flux 1', 'flux-dev', 'flux-schnell',
-        'flux dev', 'flux schnell', 'flux.1-dev', 'flux.1-schnell',
-        'flux krea', 'flux kontext', 'flux-krea', 'flux-kontext'
-    ],
-    'SD1.x': [
-        'sd 1', 'sd1', 'sd 1.4', 'sd1.4', 'sd 1.5', 'sd1.5',
-        'stable diffusion 1', 'stable diffusion 1.4', 'stable diffusion 1.5',
-        'sd 1.5 lcm', 'sd1.5 lcm', 'sd 1.5 hyper', 'sd1.5 hyper',
-        'sd15', 'sd14'
-    ],
-    'SD2.x': [
-        'sd 2', 'sd2', 'sd 2.0', 'sd2.0', 'sd 2.1', 'sd2.1',
-        'stable diffusion 2', 'stable diffusion 2.0', 'stable diffusion 2.1',
-        'sd20', 'sd21'
-    ],
-    'SDXL': [
-        'sdxl', 'sd xl', 'sd-xl', 'sdxl 1.0', 'sdxl1.0',
-        'stable diffusion xl', 'stable diffusion xl 1.0',
-        'sdxl lightning', 'sdxl-lightning', 'sdxl turbo', 'sdxl-turbo',
-        'sdxl hyper', 'sdxl-hyper'
-    ],
-    'Qwen-Image': [
-        'qwen', 'qwen2', 'qwen 2', 'qwen-image', 'qwen2-image',
-        'qwen-vl', 'qwen2-vl', 'qwen image'
-    ],
-    'Qwen-Image-Edit': [
-        'qwen-image-edit', 'qwen2-image-edit', 'qwen image edit',
-        'qwen-edit', 'qwen2-edit', 'qwen edit'
-    ],
-    'Wan-Video 1.x': [
-        'wan', 'wan 1', 'wan1', 'wan 1.3', 'wan1.3', 'wan 1.3b', 'wan1.3b',
-        'wan 14b', 'wan14b', 'wan-1.3b', 'wan-14b'
-    ],
-    'Wan-Video 2.2': [
-        'wan 2.2', 'wan2.2', 'wan 2.2 t2v', 'wan 2.2 i2v',
-        'wan-2.2', 'wan-2.2-t2v', 'wan-2.2-i2v',
-        'wan 2.2 5b', 'wan2.2-5b'
-    ],
-    'Wan-Video 2.5': [
-        'wan 2.5', 'wan2.5', 'wan 2.5 t2v', 'wan 2.5 i2v',
-        'wan-2.5', 'wan-2.5-t2v', 'wan-2.5-i2v'
-    ],
-    'AuraFlow': [
-        'aura', 'aura flow', 'aura-flow', 'auraflow'
-    ],
-    'PixArt': [
-        'pixart', 'pix art', 'pix-art', 'pixart-alpha', 'pixart-sigma'
-    ],
-    'Kolors': [
-        'kolors', 'kolor'
-    ],
-    'Hunyuan': [
-        'hunyuan', 'hunyuan dit', 'hunyuan-dit', 'hunyuandit'
-    ],
-    'Lumina': [
-        'lumina', 'lumina-text2img'
-    ],
-    'Playground': [
-        'playground', 'playground v2', 'playground v2.5', 'playgroundv2'
-    ],
-    'CogVideoX': [
-        'cogvideo', 'cogvideox', 'cog video', 'cog video x',
-        'cogvideox-2b', 'cogvideox-5b'
-    ],
-    'Mochi': [
-        'mochi', 'mochi 1'
-    ],
-    'LTX-Video': [
-        'ltx', 'ltx video', 'ltx-video', 'ltxvideo'
-    ]
+# Base model definitions with their alternative names/identifiers
+BASE_MODELS = {
+    'Aura Flow': ['aura', 'aura flow', 'aura-flow', 'auraflow'],
+    'Chroma': ['chroma'],
+    'CogVideoX': ['cogvideo', 'cogvideox', 'cog video', 'cog video x', 'cogvideox-2b', 'cogvideox-5b'],
+    'Flux .1 S': ['flux s', 'flux.1 s', 'flux-s', 'flux.1s', 'flux1s', 'flux .1 s', 'flux schnell'],
+    'Flux .1 D': ['flux d', 'flux.1 d', 'flux-d', 'flux.1d', 'flux1d', 'flux .1 d', 'flux dev', 'flux-dev'],
+    'Flux .1 Krea': ['flux krea', 'flux.1 krea', 'flux-krea', 'flux.1krea', 'flux1krea', 'flux .1 krea'],
+    'Flux .1 Kontext': ['flux kontext', 'flux.1 kontext', 'flux-kontext', 'flux.1kontext', 'flux1kontext', 'flux .1 kontext'],
+    'HiDream': ['hidream', 'hi dream', 'hi-dream'],
+    'Hunyuan 1': ['hunyuan', 'hunyuan 1', 'hunyuan1', 'hunyuan dit', 'hunyuan-dit', 'hunyuandit'],
+    'Hunyuan Video': ['hunyuan video', 'hunyuan-video', 'hunyuanvideo'],
+    'Illustrious': ['illustrious'],
+    'Kolors': ['kolors', 'kolor'],
+    'LTXV': ['ltx', 'ltxv', 'ltx video', 'ltx-video', 'ltxvideo'],
+    'Lumina': ['lumina', 'lumina-text2img'],
+    'Mochi': ['mochi', 'mochi 1', 'mochi1'],
+    'NoobAI': ['noobai', 'noob ai', 'noob-ai'],
+    'Other': ['other', 'unknown', 'custom'],
+    'PixArt α': ['pixart', 'pix art', 'pix-art', 'pixart-alpha', 'pixart alpha', 'pixartα'],
+    'PixArt Σ': ['pixart sigma', 'pixart-sigma', 'pixartσ', 'pixart σ'],
+    'Pony': ['pony', 'pony diffusion', 'pony-diffusion'],
+    'Pony V7': ['pony v7', 'ponyv7', 'pony-v7', 'pony diffusion v7'],
+    'Qwen': ['qwen', 'qwen2', 'qwen 2', 'qwen-image', 'qwen2-image', 'qwen-vl', 'qwen2-vl', 'qwen image'],
+    'SD 1.4': ['sd 1.4', 'sd1.4', 'sd14', 'stable diffusion 1.4', 'stablediffusion 1.4'],
+    'SD 1.5': ['sd 1.5', 'sd1.5', 'sd15', 'stable diffusion 1.5', 'stablediffusion 1.5', 'sd 1.5 base'],
+    'SD 1.5 LCM': ['sd 1.5 lcm', 'sd1.5 lcm', 'sd15 lcm', 'sd1.5lcm', 'sd 1.5-lcm'],
+    'SD 1.5 Hyper': ['sd 1.5 hyper', 'sd1.5 hyper', 'sd15 hyper', 'sd1.5hyper', 'sd 1.5-hyper'],
+    'SD 2.0': ['sd 2', 'sd2', 'sd 2.0', 'sd2.0', 'sd20', 'stable diffusion 2', 'stable diffusion 2.0'],
+    'SD 2.1': ['sd 2.1', 'sd2.1', 'sd21', 'stable diffusion 2.1', 'stablediffusion 2.1'],
+    'SDXL 1.0': ['sdxl', 'sd xl', 'sd-xl', 'sdxl 1.0', 'sdxl1.0', 'stable diffusion xl', 'stable diffusion xl 1.0'],
+    'SDXL Lightning': ['sdxl lightning', 'sdxl-lightning', 'sdxl lightning 1.0'],
+    'SDXL Hyper': ['sdxl hyper', 'sdxl-hyper', 'sdxl turbo', 'sdxl-turbo'],
+    'Wan Video 1.3B t2v': ['wan 1.3b', 'wan1.3b', 'wan 1.3b t2v', 'wan-1.3b', 'wan-1.3b-t2v', 'wan video 1.3b'],
+    'Wan Video 1.4B t2v': ['wan 1.4b', 'wan1.4b', 'wan 14b', 'wan14b', 'wan-14b', 'wan-1.4b', 'wan video 14b', 'wan video 1.4b'],
+    'Wan Video 1.4B i2v 480p': ['wan 1.4b 480p', 'wan 14b 480p', 'wan14b 480p', 'wan-14b-480p', 'wan 1.4b i2v 480p'],
+    'Wan Video 1.4B i2v 720p': ['wan 1.4b 720p', 'wan 14b 720p', 'wan14b 720p', 'wan-14b-720p', 'wan 1.4b i2v 720p'],
+    'Wan Video 2.2 T12V-5B': ['wan 2.2', 'wan2.2', 'wan 2.2 t2v', 'wan-2.2', 'wan-2.2-t2v', 'wan 2.2 5b', 'wan2.2-5b', 'wan 2.2 t12v'],
+    'Wan Video 2.2 I2V-A14B': ['wan 2.2 i2v', 'wan2.2 i2v', 'wan-2.2-i2v', 'wan 2.2 i2v a14b', 'wan 2.2 14b'],
+    'Wan Video 2.2 T2V-A14B': ['wan 2.2 t2v a14b', 'wan2.2 t2v a14b', 'wan 2.2 t2v 14b'],
+    'Wan Video 2.5 T2V': ['wan 2.5', 'wan2.5', 'wan 2.5 t2v', 'wan-2.5', 'wan-2.5-t2v', 'wan 2.5 text'],
+    'Wan Video 2.5 I2V': ['wan 2.5 i2v', 'wan2.5 i2v', 'wan-2.5-i2v', 'wan 2.5 image'],
 }
 
 
 class BaseModelMapper:
-    """Handles base model name normalization and family mapping."""
+    """Handles base model name normalization and mapping."""
     
     def __init__(self):
-        """Initialize the base model mapper with family definitions."""
-        self.families = BASE_MODEL_FAMILIES
+        """Initialize the base model mapper with model definitions."""
+        self.models = BASE_MODELS
         
-        # Create reverse lookup: normalized_name -> family
-        self.name_to_family = {}
-        for family, names in self.families.items():
+        # Create reverse lookup: normalized_name -> model
+        self.name_to_model = {}
+        for model, names in self.models.items():
             for name in names:
-                self.name_to_family[name.lower()] = family
+                self.name_to_model[name.lower()] = model
     
-    def normalize_to_family(self, base_model_name: str) -> Optional[str]:
+    def normalize_to_model(self, base_model_name: str) -> str:
         """
-        Normalize a base model name to its family.
+        Normalize a base model name to its standard model identifier.
         
         Args:
             base_model_name: Raw base model name from metadata
             
         Returns:
-            Normalized family name or 'Unknown' if no match
+            Normalized model name or 'Other' if no match
         """
         if not base_model_name:
-            return 'Unknown'
+            return 'Other'
         
         # Clean and lowercase
         clean_name = base_model_name.strip().lower()
         
         # Direct lookup
-        if clean_name in self.name_to_family:
-            return self.name_to_family[clean_name]
+        if clean_name in self.name_to_model:
+            return self.name_to_model[clean_name]
         
-        # Fuzzy matching: check if any family keyword is in the name
-        for family, keywords in self.families.items():
+        # Fuzzy matching: check if any model keyword is in the name
+        for model, keywords in self.models.items():
             for keyword in keywords:
                 if keyword in clean_name:
-                    return family
+                    return model
         
         # No match found
-        return 'Unknown'
+        return 'Other'
     
-    def get_all_families(self) -> List[str]:
+    def get_all_models(self) -> List[str]:
         """
-        Get list of all known base model families.
+        Get list of all known base models.
         
         Returns:
-            List of family names
+            List of model names
         """
-        return list(self.families.keys())
+        return sorted(list(self.models.keys()))
     
-    def get_families_in_catalog(self, catalog_entries: List[dict]) -> List[str]:
+    def get_models_in_catalog(self, catalog_entries: List[dict]) -> List[str]:
         """
-        Get list of base model families present in the catalog.
+        Get list of base models present in the catalog.
         
         Args:
             catalog_entries: List of LoRA catalog entries
             
         Returns:
-            Sorted list of family names present in catalog
+            Sorted list of model names present in catalog
         """
-        families_found = set()
+        models_found = set()
         
         for entry in catalog_entries:
             base_compat = entry.get('base_compat', [])
             if isinstance(base_compat, list):
-                families_found.update(base_compat)
+                models_found.update(base_compat)
             elif isinstance(base_compat, str):
-                families_found.add(base_compat)
+                models_found.add(base_compat)
         
-        # Remove 'Unknown' if other families exist
-        families_list = list(families_found)
-        if len(families_list) > 1 and 'Unknown' in families_list:
-            families_list.remove('Unknown')
+        # Remove 'Other' if other models exist
+        models_list = list(models_found)
+        if len(models_list) > 1 and 'Other' in models_list:
+            models_list.remove('Other')
         
-        return sorted(families_list)
+        return sorted(models_list)
     
-    def suggest_family_for_llm(self, civitai_text: str, known_families: List[str]) -> str:
+    def suggest_model_for_llm(self, civitai_text: str, known_models: List[str]) -> str:
         """
-        Suggest a base model family for LLM to choose from known families.
+        Suggest a base model for LLM to choose from known models.
         Used during indexing to guide LLM selection.
         
         Args:
             civitai_text: Raw text from Civitai metadata
-            known_families: List of families already indexed
+            known_models: List of models already indexed
             
         Returns:
-            Best matching family or 'Unknown'
+            Best matching model or 'Other'
         """
         civitai_lower = civitai_text.lower()
         
-        # Check each known family
-        for family in known_families:
-            # Get keywords for this family
-            keywords = self.families.get(family, [])
+        # Check each known model
+        for model in known_models:
+            # Get keywords for this model
+            keywords = self.models.get(model, [])
             for keyword in keywords:
                 if keyword in civitai_lower:
-                    return family
+                    return model
         
-        # Check all families (even if not known yet)
-        for family, keywords in self.families.items():
+        # Check all models (even if not known yet)
+        for model, keywords in self.models.items():
             for keyword in keywords:
                 if keyword in civitai_lower:
-                    return family
+                    return model
         
-        return 'Unknown'
+        return 'Other'
     
-    def is_compatible(self, lora_families: List[str], target_family: str) -> bool:
+    def is_compatible(self, lora_models: List[str], target_model: str) -> bool:
         """
-        Check if a LoRA is compatible with the target base model family.
+        Check if a LoRA is compatible with the target base model.
         
         Args:
-            lora_families: List of families the LoRA supports
-            target_family: Target family to check against
+            lora_models: List of models the LoRA supports
+            target_model: Target model to check against
             
         Returns:
             True if compatible
         """
-        if not lora_families:
+        if not lora_models:
             return False
         
-        # Special handling for Wan Video versions (cross-compatible)
-        wan_families = {'Wan-Video 1.x', 'Wan-Video 2.2', 'Wan-Video 2.5'}
-        if target_family in wan_families:
-            if any(f in wan_families for f in lora_families):
-                return True
-        
-        return target_family in lora_families
+        return target_model in lora_models
+    
+    # Backward compatibility aliases
+    def normalize_to_family(self, base_model_name: str) -> str:
+        """Alias for normalize_to_model for backward compatibility."""
+        return self.normalize_to_model(base_model_name)
+    
+    def get_all_families(self) -> List[str]:
+        """Alias for get_all_models for backward compatibility."""
+        return self.get_all_models()
+    
+    def get_families_in_catalog(self, catalog_entries: List[dict]) -> List[str]:
+        """Alias for get_models_in_catalog for backward compatibility."""
+        return self.get_models_in_catalog(catalog_entries)
+    
+    def suggest_family_for_llm(self, civitai_text: str, known_families: List[str]) -> str:
+        """Alias for suggest_model_for_llm for backward compatibility."""
+        return self.suggest_model_for_llm(civitai_text, known_families)
 
+
+# Global mapper instance
+base_model_mapper = BaseModelMapper()
 
 # Global mapper instance
 base_model_mapper = BaseModelMapper()

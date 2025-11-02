@@ -165,7 +165,7 @@ class LoRACatalog:
             'trained_words': [],
             'tags': [],
             'enabled': True,  # Default to enabled
-            'base_compat': ['Unknown'],
+            'base_compat': ['Other'],
             'default_weight': 1.0,
             'source': {
                 'kind': 'unknown'
@@ -185,9 +185,9 @@ class LoRACatalog:
             
             # Merge base model
             if safetensors_data['base_model']:
-                base_family = base_model_mapper.normalize_to_family(safetensors_data['base_model'])
-                if base_family != 'Unknown':
-                    entry['base_compat'] = [base_family]
+                base_model = base_model_mapper.normalize_to_model(safetensors_data['base_model'])
+                if base_model != 'Other':
+                    entry['base_compat'] = [base_model]
             
             # Merge recommended weight
             if safetensors_data['recommended_weight']:
@@ -225,9 +225,9 @@ class LoRACatalog:
             
             # Merge base model
             if civitai_meta.get('base_model'):
-                base_family = base_model_mapper.normalize_to_family(civitai_meta['base_model'])
-                if base_family != 'Unknown':
-                    entry['base_compat'] = [base_family]
+                base_model = base_model_mapper.normalize_to_model(civitai_meta['base_model'])
+                if base_model != 'Other':
+                    entry['base_compat'] = [base_model]
             
             # Store raw Civitai data for LLM processing
             entry['civitai_data'] = civitai_data
@@ -287,8 +287,8 @@ class LoRACatalog:
         # Update tags
         entry['tags'] = tags
         
-        # Update base compat (if provided and not unknown)
-        if base_compat and base_compat != ['Unknown']:
+        # Update base compat (if provided and not Other)
+        if base_compat and base_compat != ['Other']:
             entry['base_compat'] = base_compat
         
         print(f"[LoRACatalog] Marked as LLM indexed: {entry['display_name']}")

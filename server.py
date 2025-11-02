@@ -130,7 +130,7 @@ async def update_lora_info(request):
                 'trained_words': [],
                 'tags': [],
                 'enabled': True,
-                'base_compat': ['Unknown'],
+                'base_compat': ['Other'],
                 'default_weight': 1.0,
                 'source': {'kind': 'unknown'},
                 'indexed_at': None,
@@ -190,6 +190,7 @@ async def index_loras_batch(request):
         catalog = load_catalog()
         
         # Find unindexed LoRAs (those not yet indexed by LLM or not in catalog at all)
+        # Also skip disabled LoRAs
         unindexed = []
         for lora_file in all_lora_files:
             # Check if already in catalog
@@ -200,6 +201,10 @@ async def index_loras_batch(request):
                     str(lora_file) == entry.get('full_path')):
                     catalog_entry = entry
                     break
+            
+            # Skip if entry exists but is disabled
+            if catalog_entry and not catalog_entry.get('enabled', True):
+                continue
             
             # Add to unindexed if not in catalog OR if in catalog but not indexed by LLM
             if catalog_entry is None or not catalog_entry.get('indexed_by_llm', False):
@@ -226,7 +231,7 @@ async def index_loras_batch(request):
                 entry = lora_catalog.get_entry(file_hash)
                 
                 if entry and entry.get('civitai_text'):
-                    # Process with LLM
+                    # Has Civitai data - process with LLM
                     print(f"[Autopilot LoRA API] Processing with LLM: {lora_file.name}")
                     
                     # Get config for LLM settings
@@ -240,12 +245,15 @@ async def index_loras_batch(request):
                     api_key = config.get_api_key(provider_name)
                     
                     if not api_key:
-                        print(f"[Autopilot LoRA API] No API key for {provider_name}, skipping LLM indexing")
+                        print(f"[Autopilot LoRA API] No API key for {provider_name}, marking as indexed without LLM")
+                        # Mark as indexed_by_llm = False to prevent re-trying
+                        if entry:
+                            entry['indexed_by_llm'] = False
                         indexed_count += 1
                         continue
                     
-                    # Get known families
-                    known_families = lora_catalog.get_known_base_families()
+                    # Get known models
+                    known_models = lora_catalog.get_known_base_families()
                     
                     # Call indexing LLM
                     from .utils.indexing_llm import index_with_llm as index_llm_func
@@ -254,7 +262,7 @@ async def index_loras_batch(request):
                         provider_name,
                         model_name,
                         api_key,
-                        known_families
+                        known_models
                     )
                     
                     if success and extracted:
@@ -264,19 +272,24 @@ async def index_loras_batch(request):
                             extracted['summary'],
                             extracted['trainedWords'],
                             extracted['tags'],
-                            entry.get('base_compat', ['Unknown'])
+                            entry.get('base_compat', ['Other'])
                         )
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] ✓ Indexed with LLM: {lora_file.name}")
                     else:
-                        # Still count as success if basic indexing worked
+                        # LLM failed - mark as indexed_by_llm = False to prevent re-trying
+                        if entry:
+                            entry['indexed_by_llm'] = False
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] ✓ Basic indexing only (LLM failed): {lora_file.name}")
                         print(f"[Autopilot LoRA API]   Error: {error_msg}")
                 else:
-                    # No Civitai data, but basic indexing succeeded
+                    # No Civitai data - skip LLM processing but mark as "indexed" to prevent re-trying
+                    if entry:
+                        entry['indexed_by_llm'] = False  # Mark as processed (won't try again)
                     indexed_count += 1
-                    print(f"[Autopilot LoRA API] ✓ Basic indexing (no Civitai): {lora_file.name}")
+                    print(f"[Autopilot LoRA API] ⊘ Skipped (no Civitai data): {lora_file.name}")
+                    print(f"[Autopilot LoRA API]   Basic metadata saved, can be edited manually in catalog")
                     
             except Exception as e:
                 failed_count += 1
