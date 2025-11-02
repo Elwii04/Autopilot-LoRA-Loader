@@ -186,8 +186,8 @@ async def index_loras_batch(request):
         # Find all safetensors files
         all_lora_files = list(lora_path.glob("**/*.safetensors"))
         
-        # Load current catalog to check what's already indexed
-        catalog = load_catalog()
+        # Reload the global catalog from disk to get latest state (including enabled/disabled changes)
+        lora_catalog.load_catalog()
         
         # Find unindexed LoRAs (those not yet indexed by LLM or not in catalog at all)
         # Also skip disabled LoRAs
@@ -195,7 +195,7 @@ async def index_loras_batch(request):
         for lora_file in all_lora_files:
             # Check if already in catalog
             catalog_entry = None
-            for entry in catalog.values():
+            for entry in lora_catalog.catalog.values():
                 if (entry.get('file') == lora_file.name or 
                     str(lora_file) == entry.get('file_path') or
                     str(lora_file) == entry.get('full_path')):
@@ -206,8 +206,13 @@ async def index_loras_batch(request):
             if catalog_entry and not catalog_entry.get('enabled', True):
                 continue
             
-            # Add to unindexed if not in catalog OR if in catalog but not indexed by LLM
-            if catalog_entry is None or not catalog_entry.get('indexed_by_llm', False):
+            # Add to unindexed if:
+            # 1. Not in catalog at all (catalog_entry is None)
+            # 2. In catalog but indexed_by_llm is None/missing (not yet processed)
+            # Skip if indexed_by_llm is True (successfully indexed) or False (tried and failed/no civitai)
+            if catalog_entry is None:
+                unindexed.append(lora_file)
+            elif 'indexed_by_llm' not in catalog_entry or catalog_entry.get('indexed_by_llm') is None:
                 unindexed.append(lora_file)
         
         print(f"[Autopilot LoRA API] Found {len(unindexed)} unindexed LoRAs")
@@ -297,8 +302,8 @@ async def index_loras_batch(request):
                 import traceback
                 traceback.print_exc()
         
-        # Save the updated catalog
-        save_catalog(lora_catalog.catalog)
+        # Save the updated catalog using lora_catalog's save method to persist all changes
+        lora_catalog.save_catalog()
         
         return web.json_response({
             "success": True,

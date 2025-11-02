@@ -148,9 +148,13 @@ class LoRACatalog:
         # Compute hash
         file_hash = compute_file_hash(file_path)
         
-        # Check if already indexed
+        # Check if already exists - preserve existing enabled state and other settings
         if file_hash in self.catalog:
-            print(f"[LoRACatalog] Already indexed: {file_path.name}")
+            existing_entry = self.catalog[file_hash]
+            print(f"[LoRACatalog] Already in catalog: {file_path.name} (enabled: {existing_entry.get('enabled', True)})")
+            # Update availability and path in case file moved
+            existing_entry['available'] = True
+            existing_entry['full_path'] = str(file_path)
             return file_hash
         
         # Initialize entry
