@@ -2,6 +2,108 @@
 
 All notable changes to SmartPowerLoRALoader will be documented in this file.
 
+## [1.2.0] - 2025-11-02
+
+### Added - Major UI Overhaul 🎨
+
+**JavaScript UI Extensions:**
+- **LoRA Catalog Browser**: Full-screen searchable catalog of all indexed LoRAs
+  - Visual cards with summary, base model, and trigger count
+  - Real-time search filtering
+  - Click any LoRA to view detailed info
+- **Manual LoRA Dropdown Selection**: Replaced text input with interactive dropdowns
+  - `➕ Add Manual LoRA` button opens searchable LoRA chooser
+  - `📋 Manage Manual LoRAs` button shows management dialog
+  - Per-LoRA actions: Show Info (`ℹ️`) and Remove (`🗑️`)
+- **LoRA Info Dialog**: Comprehensive metadata viewer
+  - Summary, trigger words, tags, base model compatibility
+  - Default weight, Civitai link
+  - Styled like rgthree's Power LoRA Loader
+- **Show LoRA Catalog Button**: Main button at bottom of node
+  - Quick access to full catalog browser
+  - Also available via node context menu
+
+**API Endpoints:**
+- `GET /autopilot_lora/catalog` - Returns full LoRA catalog as JSON
+- `GET /autopilot_lora/info?file=<name>` - Returns metadata for specific LoRA
+- Registered automatically on ComfyUI startup
+
+**Files Created:**
+- `web/smart_power_lora_loader.js` - Complete UI extension (~700 lines)
+- `server.py` - API endpoint implementations
+- `UI_FEATURES.md` - Comprehensive UI documentation
+
+### Changed - UX Improvements 🔧
+
+**Parameter Simplification:**
+- Removed `indexing_provider` and `prompting_provider` dropdowns
+- Merged into single `indexing_model` and `prompting_model` dropdowns
+- Models now prefixed with provider: `"groq: llama-3.1-8b-instant"`, `"gemini: gemini-1.5-flash"`
+- Dynamic model fetching from APIs with fallback to hardcoded lists
+
+**Parameter Renaming:**
+- `base_context` → `prompt` (clearer, more intuitive)
+- `init_image` → `image` (simpler, less technical)
+- `mark_as_character` → `disable_lora` (more general purpose)
+
+**Feature Changes:**
+- Removed `autoselect` parameter (always enabled now)
+- Removed `allowlist_loras` parameter (use `disable_lora` flag instead)
+- Added `enable_negative_prompt` toggle (default: False)
+- Added `max_index_count` to LoRA Manager (default: 999)
+- Changed `reindex_on_run` default to False (performance)
+
+**Enhanced Tooltips:**
+- All parameters now have detailed 3-5 sentence descriptions
+- Include examples, recommendations, and technical details
+- Following rgthree style patterns
+
+### Added - Backend Infrastructure
+
+**Model Fetcher Utility:**
+- New `utils/model_fetcher.py` module
+- `fetch_all_available_models()` - Queries Groq and Gemini APIs
+- `parse_model_string()` - Parses "provider: model-name" format
+- Graceful fallbacks when APIs unavailable
+
+**Updated Files:**
+- `__init__.py` - Registers server.py and defines WEB_DIRECTORY
+- `nodes/smart_power_lora_loader.py` - Complete INPUT_TYPES refactor
+- `nodes/lora_manager.py` - Updated all method signatures
+- `README.md` - Updated with new parameter names
+- Fixed duplicate code (save_catalog called twice)
+
+### Documentation 📚
+
+- **REFACTORING_SUMMARY.md**: Complete change overview with technical details
+- **TESTING_GUIDE.md**: Comprehensive testing procedures (10 phases, 40+ tests)
+- **UI_FEATURES.md**: Full UI feature guide with workflows and comparisons
+- Updated README.md with new parameter names and examples
+
+### Technical Details
+
+**JavaScript Integration:**
+- Manual LoRAs stored as array internally, converted to comma-separated string for Python
+- Fully backward compatible with old text input format
+- Caching of LoRA info to minimize API calls
+- Modal dialogs with search, hover effects, keyboard shortcuts
+
+**API Architecture:**
+- Uses aiohttp web server (ComfyUI's built-in)
+- JSON responses with error handling
+- Reads from existing `data/lora_index.json` catalog
+
+**Breaking Changes:**
+- None for end users (parameter changes handled internally)
+- Developers: `indexing_provider`/`prompting_provider` parameters removed from API
+
+### Inspired By
+
+UI design patterns inspired by **rgthree's Power LoRA Loader**, adapted for:
+- AI-powered auto-selection
+- Integrated catalog system
+- Hybrid manual + automatic workflow
+
 ## [1.1.0] - 2025-01-XX
 
 ### Added
