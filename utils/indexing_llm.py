@@ -4,15 +4,11 @@ Uses LLM providers to extract structured metadata from Civitai text.
 """
 import json
 from typing import Dict, Any, Optional, List, tuple
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from llm_providers.groq_provider import GroqProvider
-from llm_providers.gemini_provider import GeminiProvider
-from utils.utils import safe_json_loads, validate_json_schema
-from utils.base_model_mapping import base_model_mapper
+from ..llm_providers.groq_provider import GroqProvider
+from ..llm_providers.gemini_provider import GeminiProvider
+from .utils import safe_json_loads, validate_json_schema
+from .base_model_mapping import base_model_mapper
 
 
 # JSON schema for indexing output

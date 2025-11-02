@@ -3,10 +3,6 @@ LoRA Application Logic
 Applies selected LoRAs to MODEL and CLIP using ComfyUI's LoraLoader.
 """
 from typing import Any, List, Dict, Tuple
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import comfy.sd

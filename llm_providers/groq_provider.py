@@ -7,14 +7,9 @@ import time
 from typing import List, Dict, Any, Optional, tuple
 import requests
 from PIL import Image
-import sys
-import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from llm_providers import BaseLLMProvider
-from utils.utils import encode_image_to_base64
+from . import BaseLLMProvider
+from ..utils.utils import encode_image_to_base64
 
 
 # Groq API configuration

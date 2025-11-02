@@ -5,14 +5,10 @@ Uses LLM to select relevant LoRAs and generate final prompt with trigger words.
 import json
 from typing import Dict, Any, Optional, List, tuple
 from PIL import Image
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from llm_providers.groq_provider import GroqProvider
-from llm_providers.gemini_provider import GeminiProvider
-from utils.utils import safe_json_loads, validate_json_schema, tensor_to_pil
+from ..llm_providers.groq_provider import GroqProvider
+from ..llm_providers.gemini_provider import GeminiProvider
+from .utils import safe_json_loads, validate_json_schema, tensor_to_pil
 
 
 # JSON schema for prompting output

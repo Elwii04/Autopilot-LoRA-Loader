@@ -6,16 +6,11 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
-import sys
-import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from utils.utils import compute_file_hash, normalize_lora_name
-from utils.safetensors_utils import parse_safetensors_file
-from utils.civitai_utils import fetch_civitai_by_hash, extract_civitai_metadata, build_civitai_summary_text
-from utils.base_model_mapping import base_model_mapper
+from .utils import compute_file_hash, normalize_lora_name
+from .safetensors_utils import parse_safetensors_file
+from .civitai_utils import fetch_civitai_by_hash, extract_civitai_metadata, build_civitai_summary_text
+from .base_model_mapping import base_model_mapper
 
 # Try to import ComfyUI's folder_paths
 try:

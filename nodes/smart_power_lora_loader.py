@@ -8,24 +8,21 @@ import sys
 import os
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import utilities
-from utils.config_manager import config
-from utils.lora_catalog import lora_catalog
-from utils.base_model_mapping import base_model_mapper
-from utils.indexing_llm import index_with_llm, suggest_base_family_with_llm
-from utils.prompting_llm import prompt_with_llm
-from utils.lora_selector import (
+# Import utilities with relative imports
+from ..utils.config_manager import config
+from ..utils.lora_catalog import lora_catalog
+from ..utils.base_model_mapping import base_model_mapper
+from ..utils.indexing_llm import index_with_llm, suggest_base_family_with_llm
+from ..utils.prompting_llm import prompt_with_llm
+from ..utils.lora_selector import (
     get_candidates_for_autoselect,
     merge_manual_and_auto_loras,
     resolve_selected_loras_from_llm
 )
-from utils.lora_applicator import apply_loras_to_model_clip
-from utils.prompt_builder import build_final_prompt, build_prompt_from_llm_output
-from utils.show_info_generator import generate_info_files_for_catalog
-from utils.civitai_utils import build_civitai_summary_text
+from ..utils.lora_applicator import apply_loras_to_model_clip
+from ..utils.prompt_builder import build_final_prompt, build_prompt_from_llm_output
+from ..utils.show_info_generator import generate_info_files_for_catalog
+from ..utils.civitai_utils import build_civitai_summary_text
 
 # Try to import ComfyUI modules
 try:

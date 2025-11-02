@@ -3,13 +3,9 @@ LoRA Selection Logic
 Filters and ranks LoRAs for auto-selection.
 """
 from typing import List, Dict, Any, Set
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from utils.utils import rank_candidates_by_relevance
-from utils.base_model_mapping import base_model_mapper
+from .utils import rank_candidates_by_relevance
+from .base_model_mapping import base_model_mapper
 
 
 def filter_by_base_model(
