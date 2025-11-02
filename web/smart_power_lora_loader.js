@@ -704,7 +704,9 @@ app.registerExtension({
             // Override serialize to convert manual LoRA widgets to string
             const onSerialize = nodeType.prototype.onSerialize;
             nodeType.prototype.onSerialize = function(o) {
-                const result = onSerialize ? onSerialize.apply(this, arguments) : o;
+                if (onSerialize) {
+                    onSerialize.apply(this, arguments);
+                }
                 
                 // Collect manual LoRAs and convert to comma-separated string
                 const manualLoras = [];
@@ -720,7 +722,7 @@ app.registerExtension({
                     manualLorasWidget.value = manualLoras.join(',');
                 }
                 
-                return result;
+                // Don't return anything - modify the passed object instead
             };
             
             // Override getSlotInPosition to detect widget clicks for context menu
@@ -1434,7 +1436,7 @@ async function showLoraCatalogDialog(node) {
                     // Update in backend if indexed
                     if (entry.file_hash) {
                         try {
-                            await api.fetchApi('/autopilot_lora/update', {
+                            const response = await api.fetchApi('/autopilot_lora/update', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -1442,8 +1444,22 @@ async function showLoraCatalogDialog(node) {
                                     enabled: entry.enabled
                                 })
                             });
+                            
+                            const result = await response.json();
+                            if (!result.success) {
+                                console.error('Failed to update LoRA enabled state:', result.error);
+                                // Revert on failure
+                                entry.enabled = !entry.enabled;
+                            } else {
+                                // Update the entry in catalog map
+                                if (catalog[entry.file_hash]) {
+                                    catalog[entry.file_hash].enabled = entry.enabled;
+                                }
+                            }
                         } catch (err) {
                             console.error('Failed to update LoRA enabled state:', err);
+                            // Revert on error
+                            entry.enabled = !entry.enabled;
                         }
                     }
                     

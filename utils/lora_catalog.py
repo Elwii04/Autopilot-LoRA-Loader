@@ -165,6 +165,7 @@ class LoRACatalog:
             'trained_words': [],
             'tags': [],
             'is_character': False,
+            'enabled': True,  # Default to enabled
             'base_compat': ['Unknown'],
             'default_weight': 1.0,
             'source': {
