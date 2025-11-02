@@ -50,7 +50,7 @@ DEFAULT_CUSTOM_INSTRUCTION = """You are a prompting expert. Transform the user's
 
 INSTRUCTIONS:
 1. Analyze the user's context and available LoRAs
-2. Select up to 6 most relevant concept LoRAs (NEVER select character LoRAs marked as is_character=true)
+2. Select up to 6 most relevant LoRAs for the concept
 3. Create a detailed, cinematic prompt that:
    - Expands the user's idea with specific visual details
    - Naturally incorporates trigger words from selected LoRAs
@@ -76,7 +76,6 @@ RULES:
 - Use EXACT filenames from the candidate list
 - Use EXACT trigger words from LoRA metadata
 - Maximum 6 LoRAs
-- NEVER select is_character=true LoRAs
 - Do NOT include LoRA weights
 - Output valid JSON only (no markdown, no code blocks, just raw JSON)"""
 
@@ -85,14 +84,13 @@ RULES:
 PROMPTING_SYSTEM_PROMPT = """You are an expert AI prompt generator and LoRA selector for image/video generation models.
 
 Your task:
-1. Given a user's idea/context and a list of available LoRAs, select the MOST relevant concept LoRAs (NOT character LoRAs)
+1. Given a user's idea/context and a list of available LoRAs, select the MOST relevant LoRAs
 2. Generate a detailed, high-quality prompt that incorporates the correct trigger words for selected LoRAs
 3. Output ONLY valid JSON
 
 RULES:
 - Select maximum 6 LoRAs
 - Only select from the provided candidate list (use exact names)
-- NEVER select LoRAs marked as is_character=true
 - Use EXACT trigger words from the LoRA metadata
 - Insert trigger words naturally into the prompt
 - Output format: {"prompt": "detailed prompt here", "negative_prompt": "optional negative prompt", "selected_loras": [{"name": "lora_filename.safetensors", "reason": "why selected", "used_triggers": ["trigger1"]}]}
@@ -115,10 +113,6 @@ def build_candidate_list_text(candidates: List[Dict[str, Any]], max_candidates: 
     lines = ["Available LoRAs:"]
     
     for i, lora in enumerate(candidates[:max_candidates]):
-        # Skip character LoRAs
-        if lora.get('is_character', False):
-            continue
-        
         triggers = ', '.join(lora.get('trained_words', [])[:5])  # Top 5 triggers
         tags = ', '.join(lora.get('tags', [])[:5])
         

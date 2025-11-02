@@ -164,7 +164,6 @@ class LoRACatalog:
             'summary': '',
             'trained_words': [],
             'tags': [],
-            'is_character': False,
             'enabled': True,  # Default to enabled
             'base_compat': ['Unknown'],
             'default_weight': 1.0,
@@ -258,8 +257,7 @@ class LoRACatalog:
         summary: str,
         trained_words: List[str],
         tags: List[str],
-        base_compat: List[str],
-        is_character: bool = False
+        base_compat: List[str]
     ):
         """
         Mark a LoRA as indexed by LLM and update its metadata.
@@ -270,7 +268,6 @@ class LoRACatalog:
             trained_words: Extracted trained words
             tags: Extracted tags
             base_compat: Base model compatibility families
-            is_character: Whether this is a character LoRA
         """
         if file_hash not in self.catalog:
             print(f"[LoRACatalog] Hash {file_hash[:16]}... not in catalog")
@@ -280,7 +277,6 @@ class LoRACatalog:
         
         # Update with LLM data
         entry['summary'] = summary
-        entry['is_character'] = is_character
         entry['indexed_by_llm'] = True
         
         # Merge trained words (keep existing + add new)
@@ -360,10 +356,10 @@ class LoRACatalog:
         return filtered
     
     def get_non_character_loras(self) -> List[Dict[str, Any]]:
-        """Get all non-character LoRAs (eligible for auto-selection) that are enabled."""
+        """Get all LoRAs eligible for auto-selection (just enabled ones)."""
         return [
             entry for entry in self.catalog.values() 
-            if not entry.get('is_character', False) and entry.get('enabled', True)
+            if entry.get('enabled', True)
         ]
     
     def get_known_base_families(self) -> List[str]:

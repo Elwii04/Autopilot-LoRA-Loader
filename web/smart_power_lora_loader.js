@@ -1476,16 +1476,12 @@ async function showLoraCatalogDialog(node) {
                     e.stopPropagation();
                     entry.enabled = !entry.enabled;
                     
-                    // Get or compute file_hash
-                    let file_hash = entry.file_hash || fileToHash.get(entry.file);
-                    
-                    // Update in backend
+                    // Update in backend using filename only (no hash needed)
                     try {
                         const response = await api.fetchApi('/autopilot_lora/update', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                file_hash: file_hash,
                                 file_name: entry.file,
                                 enabled: entry.enabled
                             })
@@ -1497,16 +1493,9 @@ async function showLoraCatalogDialog(node) {
                             // Revert on failure
                             entry.enabled = !entry.enabled;
                         } else {
-                            // Update the entry in catalog map
-                            if (result.entry) {
-                                // Update file_hash if it was just created
-                                if (!file_hash && result.entry.file_hash) {
-                                    entry.file_hash = result.entry.file_hash;
-                                    fileToHash.set(entry.file, result.entry.file_hash);
-                                }
-                                if (catalog[result.entry.file_hash]) {
-                                    catalog[result.entry.file_hash].enabled = entry.enabled;
-                                }
+                            // Update the entry in catalog map if needed
+                            if (result.entry && result.entry.file_hash && catalog[result.entry.file_hash]) {
+                                catalog[result.entry.file_hash].enabled = entry.enabled;
                             }
                         }
                     } catch (err) {

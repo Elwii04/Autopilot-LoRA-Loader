@@ -238,8 +238,7 @@ class LoRAManager:
                         summary=extracted['summary'],
                         trained_words=extracted['trainedWords'],
                         tags=extracted['tags'],
-                        base_compat=base_compat,
-                        is_character=False
+                        base_compat=base_compat
                     )
                     print(f"[Manager] ✅ Successfully indexed: {entry.get('display_name', file_path.name)}")
                     success_count += 1
@@ -299,8 +298,7 @@ class LoRAManager:
                 summary=summary if summary else entry.get('summary', ''),
                 trained_words=trigger_list,
                 tags=tag_list,
-                base_compat=[base_model] if base_model != "Unknown" else entry.get('base_compat', ['Unknown']),
-                is_character=False  # Not used anymore, keeping for compatibility
+                base_compat=[base_model] if base_model != "Unknown" else entry.get('base_compat', ['Unknown'])
             )
             
             # Update weight and disabled status
@@ -366,8 +364,7 @@ class LoRAManager:
             summary=extracted['summary'],
             trained_words=extracted['trainedWords'],
             tags=extracted['tags'],
-            base_compat=base_compat,
-            is_character=False  # Not used anymore, keeping for compatibility
+            base_compat=base_compat
         )
         
         # Set disabled status

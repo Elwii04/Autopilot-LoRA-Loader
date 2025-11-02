@@ -87,36 +87,36 @@ async def get_lora_info(request):
 
 @PromptServer.instance.routes.post("/autopilot_lora/update")
 async def update_lora_info(request):
-    """Update information for a specific LoRA. Creates entry if it doesn't exist."""
+    """Update information for a specific LoRA by filename. Creates entry if it doesn't exist."""
     try:
         data = await request.json()
-        file_hash = data.get('file_hash')
-        file_name = data.get('file_name')  # Optional: for creating new entries
+        file_name = data.get('file_name')
         
-        if not file_hash:
-            return web.json_response({"error": "No file_hash specified"}, status=400)
+        if not file_name:
+            return web.json_response({"error": "No file_name specified"}, status=400)
         
         catalog = load_catalog()
         
-        # If entry doesn't exist and file_name provided, create minimal entry
-        if file_hash not in catalog:
-            if not file_name:
-                return web.json_response({"error": "LoRA not found in catalog"}, status=404)
-            
-            # Create minimal entry
-            from datetime import datetime
-            catalog[file_hash] = {
-                'file_hash': file_hash,
+        # Find entry by filename
+        entry_hash = None
+        for hash_key, entry in catalog.items():
+            if entry.get('file') == file_name:
+                entry_hash = hash_key
+                break
+        
+        # If entry doesn't exist, create minimal entry with filename as key
+        if not entry_hash:
+            # Use filename as temporary key (will be replaced with hash when indexed)
+            entry_hash = f"temp_{file_name}"
+            catalog[entry_hash] = {
                 'file': file_name,
                 'full_path': '',
-                'display_name': file_name,
-                'sha256': file_hash,
+                'display_name': file_name.replace('.safetensors', '').replace('_', ' '),
                 'available': True,
                 'summary': '',
                 'trained_words': [],
                 'tags': [],
-                'is_character': False,
-                'enabled': True,
+                'enabled': True,  # Default to enabled
                 'base_compat': ['Unknown'],
                 'default_weight': 1.0,
                 'source': {'kind': 'unknown'},
@@ -125,8 +125,8 @@ async def update_lora_info(request):
             }
         
         # Update allowed fields
-        entry = catalog[file_hash]
-        allowed_fields = ['summary', 'trained_words', 'tags', 'default_weight', 'display_name', 'is_character', 'enabled']
+        entry = catalog[entry_hash]
+        allowed_fields = ['summary', 'trained_words', 'tags', 'default_weight', 'display_name', 'enabled']
         
         for field in allowed_fields:
             if field in data:
@@ -248,8 +248,7 @@ async def index_loras_batch(request):
                             extracted['summary'],
                             extracted['trainedWords'],
                             extracted['tags'],
-                            entry.get('base_compat', ['Unknown']),
-                            False  # is_character
+                            entry.get('base_compat', ['Unknown'])
                         )
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] ✓ Indexed with LLM: {lora_file.name}")

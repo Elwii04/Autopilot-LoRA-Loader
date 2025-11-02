@@ -75,9 +75,9 @@ def filter_non_character(
         catalog_entries: List of catalog entries
         
     Returns:
-        Filtered list (non-character only)
+        Filtered list (all entries, is_character check removed)
     """
-    return [entry for entry in catalog_entries if not entry.get('is_character', False)]
+    return catalog_entries  # Return all entries, no filtering needed
 
 
 def get_candidates_for_autoselect(

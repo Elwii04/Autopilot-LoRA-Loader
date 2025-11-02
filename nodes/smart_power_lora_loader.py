@@ -345,8 +345,7 @@ class SmartPowerLoRALoader:
                         summary=extracted['summary'],
                         trained_words=extracted['trainedWords'],
                         tags=extracted['tags'],
-                        base_compat=base_compat,
-                        is_character=False  # TODO: Add character detection heuristic
+                        base_compat=base_compat
                     )
                     print(f"[Indexing] ✅ Successfully indexed: {entry.get('display_name', file_path.name)}")
                 else:
