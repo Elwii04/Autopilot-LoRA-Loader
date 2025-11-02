@@ -520,6 +520,112 @@ class ManualLoraWidget {
     }
 }
 
+// Custom Button Widget (like rgthree's RgthreeBetterButtonWidget)
+class CustomButtonWidget {
+    constructor(name, label, callback) {
+        this.name = name;
+        this.type = "button";
+        this.value = "";
+        this.label = label;
+        this.callback = callback;
+        this.options = { serialize: false };
+        this.y = 0;
+        this.last_y = 0;
+        this.isMouseDownedAndOver = false;
+    }
+
+    draw(ctx, node, widgetWidth, posY, widgetHeight) {
+        const margin = 15;
+        const buttonWidth = widgetWidth - margin * 2;
+        const buttonHeight = widgetHeight - 4;
+        
+        ctx.save();
+        
+        // Button background
+        const bgColor = this.isMouseDownedAndOver ? "#4a6a8a" : "#3a5a7a";
+        ctx.fillStyle = bgColor;
+        ctx.beginPath();
+        ctx.roundRect(margin, posY + 2, buttonWidth, buttonHeight, 4);
+        ctx.fill();
+        
+        // Button border
+        ctx.strokeStyle = "#5a7a9a";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Button text
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.label, widgetWidth / 2, posY + widgetHeight / 2);
+        
+        ctx.restore();
+        
+        this.last_y = posY;
+    }
+
+    mouse(event, pos, node) {
+        if (event.type === "pointerdown") {
+            this.isMouseDownedAndOver = true;
+            node.setDirtyCanvas(true, false);
+            return true;
+        }
+        
+        if (event.type === "pointerup") {
+            if (this.isMouseDownedAndOver) {
+                this.isMouseDownedAndOver = false;
+                node.setDirtyCanvas(true, false);
+                
+                // Call the callback
+                if (this.callback) {
+                    this.callback(event, pos, node);
+                }
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    computeSize(width) {
+        return [width, 34];
+    }
+
+    serializeValue() {
+        return "";
+    }
+}
+
+// Spacer Widget for proper spacing
+class SpacerWidget {
+    constructor(height = 4) {
+        this.name = "spacer_" + Math.random();
+        this.type = "spacer";
+        this.value = "";
+        this.height = height;
+        this.options = { serialize: false };
+        this.y = 0;
+    }
+
+    draw(ctx, node, widgetWidth, posY, widgetHeight) {
+        // Draw nothing, just take up space
+        return;
+    }
+
+    mouse(event, pos, node) {
+        return false;
+    }
+
+    computeSize(width) {
+        return [width, this.height];
+    }
+
+    serializeValue() {
+        return "";
+    }
+}
+
 // Register the extension
 app.registerExtension({
     name: "autopilot.smart.power.lora.loader",
@@ -556,28 +662,46 @@ app.registerExtension({
                 this.manualLoraWidgets = [];
                 this.manualLoraCounter = 0;
                 
-                // Add "Add Manual LoRA" button widget
-                const addBtn = this.addWidget("button", "➕ Add Manual LoRA", "add_lora", () => {
-                    const widget = new ManualLoraWidget("manual_lora_" + this.manualLoraCounter++, this);
-                    this.manualLoraWidgets.push(widget);
-                    
-                    // Insert before the Add button
-                    const buttonIndex = this.widgets.findIndex(w => w.name === "➕ Add Manual LoRA");
-                    if (buttonIndex >= 0) {
-                        this.widgets.splice(buttonIndex, 0, widget);
-                    } else {
-                        this.widgets.push(widget);
-                    }
-                    
-                    const computed = this.computeSize();
-                    this.size[1] = Math.max(this.size[1], computed[1]);
-                    this.setDirtyCanvas(true, true);
-                });
+                // Add a spacer at the top
+                this.widgets.push(new SpacerWidget(4));
                 
-                // Add "Show LoRA Catalog" button at the very bottom
-                const catalogBtn = this.addWidget("button", "ℹ️ Show LoRA Catalog", "show_catalog", async () => {
-                    await showLoraCatalogDialog(this);
-                });
+                // Create and add "Add Manual LoRA" button using custom widget
+                const addLoraBtn = new CustomButtonWidget(
+                    "add_manual_lora_btn",
+                    "➕ Add Manual LoRA",
+                    (event, pos, node) => {
+                        const widget = new ManualLoraWidget("manual_lora_" + node.manualLoraCounter++, node);
+                        node.manualLoraWidgets.push(widget);
+                        
+                        // Find the button's index and insert before it
+                        const buttonIndex = node.widgets.findIndex(w => w.name === "add_manual_lora_btn");
+                        if (buttonIndex >= 0) {
+                            node.widgets.splice(buttonIndex, 0, widget);
+                        } else {
+                            node.widgets.push(widget);
+                        }
+                        
+                        const computed = node.computeSize();
+                        node.size[1] = Math.max(node.size[1], computed[1]);
+                        node.setDirtyCanvas(true, true);
+                        return true;
+                    }
+                );
+                this.widgets.push(addLoraBtn);
+                
+                // Add a small spacer
+                this.widgets.push(new SpacerWidget(4));
+                
+                // Create and add "Show LoRA Catalog" button using custom widget
+                const catalogBtn = new CustomButtonWidget(
+                    "show_catalog_btn",
+                    "ℹ️ Show LoRA Catalog",
+                    async (event, pos, node) => {
+                        await showLoraCatalogDialog(node);
+                        return true;
+                    }
+                );
+                this.widgets.push(catalogBtn);
                 
                 return r;
             };
