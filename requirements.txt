@@ -1,0 +1,22 @@
+# SmartPowerLoRALoader Dependencies
+
+# Environment management
+python-dotenv>=1.0.0
+
+# HTTP requests
+requests>=2.31.0
+
+# LLM Providers
+groq>=0.4.0
+google-generativeai>=0.3.0
+
+# Image processing
+Pillow>=10.0.0
+
+# JSON schema validation
+jsonschema>=4.17.0
+
+# ComfyUI dependencies (should already be installed)
+# torch - comes with ComfyUI
+# numpy - comes with ComfyUI
+# safetensors - comes with ComfyUI
