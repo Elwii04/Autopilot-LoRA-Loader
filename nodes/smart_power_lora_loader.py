@@ -94,9 +94,10 @@ class SmartPowerLoRALoader:
                 "image": ("IMAGE", {
                     "tooltip": "Optional reference image for vision-capable models. The AI can analyze this image to better select relevant LoRAs and generate contextual prompts. Requires a vision model (e.g., gemini: gemini-1.5-flash)."
                 }),
-                "manual_loras": (all_loras, {
-                    "default": all_loras[0] if all_loras else "No LoRAs indexed yet",
-                    "tooltip": "Force-apply specific LoRAs (e.g., character LoRAs) that you always want included, regardless of AI selection. These will be applied in addition to auto-selected LoRAs. Separate multiple with commas if typing manually."
+                "manual_loras": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "tooltip": "Hidden input - Managed by the JavaScript UI. This field is automatically populated with manually selected LoRAs from the UI widgets. Do not edit directly."
                 }),
                 "custom_instruction": ("STRING", {
                     "multiline": True,
@@ -238,20 +239,6 @@ class SmartPowerLoRALoader:
             negative_prompt = ""
         
         # Step 8: Build selection JSON for debugging
-        selection_json = self._build_selection_json(all_selected, manual_lora_list)
-        
-        print(f"Final prompt length: {len(final_prompt)} chars")
-        print("="*60 + "\n")
-        
-        return (model, clip, final_prompt, negative_prompt, selection_json)
-        
-        # Step 6: Apply LoRAs to model and clip
-        if model is not None and clip is not None and all_selected:
-            model, clip = apply_loras_to_model_clip(model, clip, all_selected)
-        elif model is None or clip is None:
-            print("[SmartPowerLoRALoader] Warning: MODEL or CLIP not provided, LoRAs not applied")
-        
-        # Step 7: Build selection JSON for debugging
         selection_json = self._build_selection_json(all_selected, manual_lora_list)
         
         print(f"Final prompt length: {len(final_prompt)} chars")

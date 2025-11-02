@@ -155,6 +155,7 @@ class LoRACatalog:
         
         # Initialize entry
         entry = {
+            'file_hash': file_hash,  # Add file_hash to the entry itself for easy access
             'file': str(file_path.name),
             'full_path': str(file_path),
             'display_name': normalize_lora_name(file_path.name),
