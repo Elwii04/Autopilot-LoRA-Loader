@@ -167,8 +167,9 @@ class SmartPowerLoRALoader:
     RETURN_TYPES = ("MODEL", "CLIP", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("MODEL", "CLIP", "final_prompt", "negative_prompt", "selected_loras_json")
     FUNCTION = "process"
-    CATEGORY = "loaders"
+    CATEGORY = "loaders/Autopilot LoRA"
     DESCRIPTION = "Smart LoRA loader with automatic selection and LLM-powered prompt generation"
+    OUTPUT_NODE = False
     
     def __init__(self):
         """Initialize the node."""
@@ -489,5 +490,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "SmartPowerLoRALoader": "Smart Power LoRA Loader"
+    "SmartPowerLoRALoader": "⚡ Smart Power LoRA Loader (Autopilot)"
 }

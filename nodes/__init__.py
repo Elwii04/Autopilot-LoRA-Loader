@@ -1,6 +1,6 @@
 """
 Nodes package initialization
 """
-from .smart_power_lora_loader import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+# Nodes are imported and registered in the parent __init__.py
+# This file can remain minimal
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
