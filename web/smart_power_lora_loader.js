@@ -70,13 +70,13 @@ async function getLoraInfo(loraName) {
 }
 
 // Show LoRA chooser (like rgthree's showLoraChooser using LiteGraph.ContextMenu)
-async function showLoraChooser(callback, currentValue = null) {
+async function showLoraChooser(event, callback, currentValue = null) {
     await getAvailableLoras();
     
     const loras = availableLoras.length > 0 ? availableLoras : ["None"];
     
     new LiteGraph.ContextMenu(loras, {
-        event: window.event || { clientX: 100, clientY: 100 },
+        event: event,
         title: "Choose a LoRA",
         scale: Math.max(1, app.canvas.ds?.scale ?? 1),
         className: "dark",
@@ -304,7 +304,7 @@ class ManualLoraWidget {
     }
 
     onLoraClick(event, pos, node) {
-        showLoraChooser((value) => {
+        showLoraChooser(event, (value) => {
             if (typeof value === "string") {
                 this.value.lora = value;
             }
@@ -644,6 +644,10 @@ app.registerExtension({
                 const headerWidget = new ManualLoraHeaderWidget();
                 this.widgets.push(headerWidget);
                 
+                console.log("[Autopilot LoRA] Adding small spacer after header...");
+                // Add a small spacer after header
+                this.widgets.push(new SpacerWidget(2));
+                
                 console.log("[Autopilot LoRA] Adding Add Manual LoRA button...");
                 // Create and add "Add Manual LoRA" button using custom widget
                 const addLoraBtn = new CustomButtonWidget(
@@ -654,10 +658,11 @@ app.registerExtension({
                         const widget = new ManualLoraWidget("manual_lora_" + node.manualLoraCounter++, node);
                         node.manualLoraWidgets.push(widget);
                         
-                        // Find the button's index and insert before it
-                        const buttonIndex = node.widgets.findIndex(w => w.name === "add_manual_lora_btn");
-                        if (buttonIndex >= 0) {
-                            node.widgets.splice(buttonIndex, 0, widget);
+                        // Find the header widget and insert the new LoRA right after it (after the spacer)
+                        const headerIndex = node.widgets.findIndex(w => w.type === "manual_lora_header");
+                        if (headerIndex >= 0) {
+                            // Insert after header and its spacer (headerIndex + 2)
+                            node.widgets.splice(headerIndex + 2, 0, widget);
                         } else {
                             node.widgets.push(widget);
                         }
@@ -716,6 +721,100 @@ app.registerExtension({
                 }
                 
                 return result;
+            };
+            
+            // Override getSlotInPosition to detect widget clicks for context menu
+            const origGetSlotInPosition = nodeType.prototype.getSlotInPosition;
+            nodeType.prototype.getSlotInPosition = function(canvasX, canvasY) {
+                const slot = origGetSlotInPosition ? origGetSlotInPosition.apply(this, arguments) : null;
+                
+                // If no slot found, check if we clicked a manual LoRA widget
+                if (!slot) {
+                    let lastWidget = null;
+                    for (const widget of this.widgets || []) {
+                        if (!widget.last_y) return;
+                        if (canvasY > this.pos[1] + widget.last_y) {
+                            lastWidget = widget;
+                            continue;
+                        }
+                        break;
+                    }
+                    
+                    // If we clicked a manual LoRA widget, return fake slot data
+                    if (lastWidget?.type === "manual_lora") {
+                        return { widget: lastWidget, output: { type: "MANUAL_LORA_WIDGET" } };
+                    }
+                }
+                return slot;
+            };
+            
+            // Override getSlotMenuOptions to show context menu for manual LoRA widgets
+            const origGetSlotMenuOptions = nodeType.prototype.getSlotMenuOptions;
+            nodeType.prototype.getSlotMenuOptions = function(slot) {
+                // Check if this is a manual LoRA widget
+                if (slot?.widget?.type === "manual_lora") {
+                    const widget = slot.widget;
+                    const index = this.widgets.indexOf(widget);
+                    const canMoveUp = index > 0 && this.widgets[index - 1]?.type === "manual_lora";
+                    const canMoveDown = index < this.widgets.length - 1 && this.widgets[index + 1]?.type === "manual_lora";
+                    
+                    const menuItems = [
+                        {
+                            content: `${widget.value.on ? "⚫" : "🟢"} Toggle ${widget.value.on ? "Off" : "On"}`,
+                            callback: () => {
+                                widget.value.on = !widget.value.on;
+                                this.setDirtyCanvas(true, true);
+                            }
+                        },
+                        null, // Divider
+                        {
+                            content: `⬆️ Move Up`,
+                            disabled: !canMoveUp,
+                            callback: () => {
+                                if (canMoveUp) {
+                                    // Swap with previous manual LoRA
+                                    const temp = this.widgets[index];
+                                    this.widgets[index] = this.widgets[index - 1];
+                                    this.widgets[index - 1] = temp;
+                                    this.setDirtyCanvas(true, true);
+                                }
+                            }
+                        },
+                        {
+                            content: `⬇️ Move Down`,
+                            disabled: !canMoveDown,
+                            callback: () => {
+                                if (canMoveDown) {
+                                    // Swap with next manual LoRA
+                                    const temp = this.widgets[index];
+                                    this.widgets[index] = this.widgets[index + 1];
+                                    this.widgets[index + 1] = temp;
+                                    this.setDirtyCanvas(true, true);
+                                }
+                            }
+                        },
+                        {
+                            content: `🗑️ Remove`,
+                            callback: () => {
+                                this.widgets = this.widgets.filter(w => w !== widget);
+                                this.manualLoraWidgets = this.manualLoraWidgets?.filter(w => w !== widget) || [];
+                                const computed = this.computeSize();
+                                this.size[1] = Math.max(this.size[1], computed[1]);
+                                this.setDirtyCanvas(true, true);
+                            }
+                        }
+                    ];
+                    
+                    new LiteGraph.ContextMenu(menuItems, {
+                        title: "MANUAL LORA",
+                        event: app.canvas.last_mouse_event || window.event
+                    });
+                    
+                    return undefined;
+                }
+                
+                // Default behavior
+                return origGetSlotMenuOptions ? origGetSlotMenuOptions.apply(this, arguments) : undefined;
             };
             
             // Add context menu option
