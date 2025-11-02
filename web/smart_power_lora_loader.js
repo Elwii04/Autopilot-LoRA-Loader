@@ -631,18 +631,27 @@ app.registerExtension({
     name: "autopilot.smart.power.lora.loader",
     
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        console.log("[Autopilot LoRA] beforeRegisterNodeDef called for:", nodeData.name);
+        
         if (nodeData.name === NODE_NAME) {
+            console.log("[Autopilot LoRA] Matched NODE_NAME! Setting up node...");
+            
             // Load available LoRAs on startup
             await getAvailableLoras();
+            console.log("[Autopilot LoRA] Loaded", availableLoras.length, "LoRAs");
             
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             
             nodeType.prototype.onNodeCreated = function() {
+                console.log("[Autopilot LoRA] onNodeCreated called!");
+                console.log("[Autopilot LoRA] Initial widgets:", this.widgets ? this.widgets.length : 0);
+                
                 const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
                 
                 // Hide the manual_loras text widget
                 const manualLorasWidget = this.widgets?.find(w => w.name === "manual_loras");
                 if (manualLorasWidget) {
+                    console.log("[Autopilot LoRA] Found manual_loras widget, hiding it");
                     // Hide it by making it 0 height
                     manualLorasWidget.computeSize = () => [0, -4];
                     manualLorasWidget.type = "converted-widget";
@@ -662,14 +671,17 @@ app.registerExtension({
                 this.manualLoraWidgets = [];
                 this.manualLoraCounter = 0;
                 
+                console.log("[Autopilot LoRA] Adding spacer...");
                 // Add a spacer at the top
                 this.widgets.push(new SpacerWidget(4));
                 
+                console.log("[Autopilot LoRA] Adding Add Manual LoRA button...");
                 // Create and add "Add Manual LoRA" button using custom widget
                 const addLoraBtn = new CustomButtonWidget(
                     "add_manual_lora_btn",
                     "➕ Add Manual LoRA",
                     (event, pos, node) => {
+                        console.log("[Autopilot LoRA] Add Manual LoRA button clicked!");
                         const widget = new ManualLoraWidget("manual_lora_" + node.manualLoraCounter++, node);
                         node.manualLoraWidgets.push(widget);
                         
@@ -688,20 +700,29 @@ app.registerExtension({
                     }
                 );
                 this.widgets.push(addLoraBtn);
+                console.log("[Autopilot LoRA] Add button added, total widgets now:", this.widgets.length);
                 
                 // Add a small spacer
                 this.widgets.push(new SpacerWidget(4));
                 
+                console.log("[Autopilot LoRA] Adding Show LoRA Catalog button...");
                 // Create and add "Show LoRA Catalog" button using custom widget
                 const catalogBtn = new CustomButtonWidget(
                     "show_catalog_btn",
                     "ℹ️ Show LoRA Catalog",
                     async (event, pos, node) => {
+                        console.log("[Autopilot LoRA] Show LoRA Catalog button clicked!");
                         await showLoraCatalogDialog(node);
                         return true;
                     }
                 );
                 this.widgets.push(catalogBtn);
+                console.log("[Autopilot LoRA] Catalog button added, total widgets now:", this.widgets.length);
+                
+                console.log("[Autopilot LoRA] Final widget list:");
+                this.widgets.forEach((w, i) => {
+                    console.log(`  [${i}] ${w.name || 'unnamed'} (type: ${w.type})`);
+                });
                 
                 return r;
             };
