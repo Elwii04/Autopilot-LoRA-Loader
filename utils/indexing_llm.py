@@ -46,20 +46,23 @@ REQUIRED JSON OUTPUT FORMAT:
 }"""
 
 
-def create_indexing_prompt(civitai_text: str, known_families: List[str]) -> str:
+def create_indexing_prompt(civitai_text: str, known_families: List[str], filename: str = "") -> str:
     """
     Create the indexing prompt with context.
     
     Args:
         civitai_text: Text from Civitai metadata
         known_families: List of already known base model families
+        filename: Optional filename of the LoRA for additional context
         
     Returns:
         Full prompt for LLM
     """
+    filename_context = f"\n\nLoRA Filename: {filename}" if filename else ""
+    
     prompt = f"""Extract structured metadata from this LoRA description:
 
-{civitai_text}
+{civitai_text}{filename_context}
 
 Known base model families (for reference): {', '.join(known_families) if known_families else 'None yet'}
 
@@ -115,7 +118,8 @@ def index_with_llm(
     provider_name: str,
     model_name: str,
     api_key: str,
-    known_families: List[str]
+    known_families: List[str],
+    filename: str = ""
 ) -> tuple[bool, Optional[Dict[str, Any]], str]:
     """
     Use LLM to index Civitai text and extract metadata.
@@ -126,6 +130,7 @@ def index_with_llm(
         model_name: Model to use
         api_key: API key for provider
         known_families: List of already known base model families
+        filename: Optional filename of the LoRA for additional context
         
     Returns:
         Tuple of (success, extracted_data, error_message)
@@ -141,8 +146,8 @@ def index_with_llm(
     except Exception as e:
         return False, None, f"Provider initialization error: {str(e)}"
     
-    # Build prompt
-    prompt = create_indexing_prompt(civitai_text, known_families)
+    # Build prompt with filename
+    prompt = create_indexing_prompt(civitai_text, known_families, filename)
     
     # Generate with LLM
     success, response, error = provider.generate_text(

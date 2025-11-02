@@ -317,7 +317,8 @@ class SmartPowerLoRALoader:
                     provider_name=indexing_provider,
                     model_name=indexing_model,
                     api_key=api_key,
-                    known_families=known_families
+                    known_families=known_families,
+                    filename=file_path.name
                 )
                 
                 if success and extracted:

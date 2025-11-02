@@ -216,7 +216,8 @@ class LoRAManager:
                     provider_name=provider,
                     model_name=model_name,
                     api_key=api_key,
-                    known_families=known_families
+                    known_families=known_families,
+                    filename=file_path.name
                 )
                 
                 if success and extracted:
@@ -341,7 +342,8 @@ class LoRAManager:
             provider_name=provider,
             model_name=model_name,
             api_key=api_key,
-            known_families=known_families
+            known_families=known_families,
+            filename=lora_name
         )
         
         if not success or not extracted:
