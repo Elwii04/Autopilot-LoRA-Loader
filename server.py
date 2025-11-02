@@ -119,7 +119,150 @@ async def update_lora_info(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+@PromptServer.instance.routes.post("/autopilot_lora/index")
+async def index_loras_batch(request):
+    """Index multiple unindexed LoRAs with a max limit."""
+    try:
+        data = await request.json()
+        max_loras = data.get('max_loras', 10)
+        
+        print(f"[Autopilot LoRA API] Starting batch indexing (max: {max_loras})")
+        
+        # Import required modules
+        from pathlib import Path
+        from .utils.lora_catalog import lora_catalog
+        from .utils.indexing_llm import index_with_llm
+        
+        # Get all LoRA files from folder_paths
+        import folder_paths
+        lora_folder = folder_paths.get_folder_paths("loras")[0]
+        lora_path = Path(lora_folder)
+        
+        if not lora_path.exists():
+            return web.json_response({
+                "error": "LoRA folder not found",
+                "path": str(lora_path)
+            }, status=404)
+        
+        # Find all safetensors files
+        all_lora_files = list(lora_path.glob("**/*.safetensors"))
+        
+        # Load current catalog to check what's already indexed
+        catalog = load_catalog()
+        
+        # Find unindexed LoRAs
+        unindexed = []
+        for lora_file in all_lora_files:
+            # Check if already in catalog by checking all entries
+            is_indexed = any(
+                entry.get('file') == lora_file.name or 
+                str(lora_file) == entry.get('file_path') or
+                str(lora_file) == entry.get('full_path')
+                for entry in catalog.values()
+            )
+            if not is_indexed:
+                unindexed.append(lora_file)
+        
+        print(f"[Autopilot LoRA API] Found {len(unindexed)} unindexed LoRAs")
+        
+        # Limit to max_loras
+        to_index = unindexed[:max_loras]
+        
+        indexed_count = 0
+        failed_count = 0
+        skipped_count = len(unindexed) - len(to_index)
+        
+        # Index each LoRA
+        for lora_file in to_index:
+            try:
+                print(f"[Autopilot LoRA API] Indexing: {lora_file.name}")
+                
+                # First index basic metadata
+                file_hash = lora_catalog.index_lora_basic(lora_file)
+                
+                # Get the entry to check if it has Civitai data
+                entry = lora_catalog.get_entry(file_hash)
+                
+                if entry and entry.get('civitai_text'):
+                    # Process with LLM
+                    print(f"[Autopilot LoRA API] Processing with LLM: {lora_file.name}")
+                    
+                    # Get config for LLM settings
+                    from .utils.config_manager import config
+                    
+                    # Get indexing model info
+                    indexing_model = config.get('indexing_model', 'groq: llama-3.1-8b-instant')
+                    provider_name, model_name = indexing_model.split(': ', 1) if ': ' in indexing_model else ('groq', 'llama-3.1-8b-instant')
+                    
+                    # Get API key
+                    api_key = config.get_api_key(provider_name)
+                    
+                    if not api_key:
+                        print(f"[Autopilot LoRA API] No API key for {provider_name}, skipping LLM indexing")
+                        indexed_count += 1
+                        continue
+                    
+                    # Get known families
+                    known_families = lora_catalog.get_known_base_families()
+                    
+                    # Call indexing LLM
+                    from .utils.indexing_llm import index_with_llm as index_llm_func
+                    success, extracted, error_msg = index_llm_func(
+                        entry['civitai_text'],
+                        provider_name,
+                        model_name,
+                        api_key,
+                        known_families
+                    )
+                    
+                    if success and extracted:
+                        # Mark as indexed with LLM data
+                        lora_catalog.mark_llm_indexed(
+                            file_hash,
+                            extracted['summary'],
+                            extracted['trainedWords'],
+                            extracted['tags'],
+                            entry.get('base_compat', ['Unknown']),
+                            False  # is_character
+                        )
+                        indexed_count += 1
+                        print(f"[Autopilot LoRA API] ✓ Indexed with LLM: {lora_file.name}")
+                    else:
+                        # Still count as success if basic indexing worked
+                        indexed_count += 1
+                        print(f"[Autopilot LoRA API] ✓ Basic indexing only (LLM failed): {lora_file.name}")
+                        print(f"[Autopilot LoRA API]   Error: {error_msg}")
+                else:
+                    # No Civitai data, but basic indexing succeeded
+                    indexed_count += 1
+                    print(f"[Autopilot LoRA API] ✓ Basic indexing (no Civitai): {lora_file.name}")
+                    
+            except Exception as e:
+                failed_count += 1
+                print(f"[Autopilot LoRA API] ✗ Error indexing {lora_file.name}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Save the updated catalog
+        save_catalog(lora_catalog.catalog)
+        
+        return web.json_response({
+            "success": True,
+            "indexed_count": indexed_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
+            "total_unindexed": len(unindexed)
+        })
+        
+    except Exception as e:
+        print(f"[Autopilot LoRA API] Error in /index endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return web.json_response({"error": str(e)}, status=500)
+
+
 print("[Autopilot LoRA API] Registered API endpoints:")
 print("  - GET /autopilot_lora/catalog")
 print("  - GET /autopilot_lora/info?file=<filename>")
 print("  - POST /autopilot_lora/update")
+print("  - POST /autopilot_lora/index")

@@ -7,42 +7,42 @@ const NODE_NAME = "SmartPowerLoRALoader";
 // Store available LoRAs globally
 let availableLoras = [];
 
-// Fetch LoRAs from ComfyUI
+// Fetch LoRAs from ComfyUI (gets ALL LoRAs from folder_paths, not just indexed ones)
 async function getAvailableLoras() {
-    if (availableLoras.length === 0) {
-        try {
-            // Use ComfyUI's folder_paths API to get LoRAs
-            const response = await api.fetchApi('/folder_paths');
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.loras) {
-                    availableLoras = data.loras;
-                    return availableLoras;
-                }
-            }
-            
-            // Fallback: Use object_info to get LoRA list
-            const objectInfo = await api.getObjectInfo();
-            for (const nodeType in objectInfo) {
-                const nodeDef = objectInfo[nodeType];
-                if (nodeDef.input && nodeDef.input.required) {
-                    for (const inputName in nodeDef.input.required) {
-                        const inputDef = nodeDef.input.required[inputName];
-                        if (Array.isArray(inputDef) && inputDef[0] && Array.isArray(inputDef[0])) {
-                            const firstItem = inputDef[0][0] || "";
-                            if (typeof firstItem === 'string' && firstItem.includes('.safetensors')) {
-                                availableLoras = inputDef[0];
-                                return availableLoras;
-                            }
+    try {
+        // Get object_info which contains all available LoRAs
+        const objectInfo = await api.getObjectInfo();
+        
+        // Find any node that has lora inputs to get the list
+        for (const nodeType in objectInfo) {
+            const nodeDef = objectInfo[nodeType];
+            if (nodeDef.input && nodeDef.input.required) {
+                for (const inputName in nodeDef.input.required) {
+                    const inputDef = nodeDef.input.required[inputName];
+                    // Check if this is a lora combo input
+                    if (Array.isArray(inputDef) && inputDef[0] && Array.isArray(inputDef[0])) {
+                        const options = inputDef[0];
+                        // Check if it looks like a lora list (has .safetensors files)
+                        if (options.length > 0 && options.some(item => 
+                            typeof item === 'string' && item.includes('.safetensors'))) {
+                            availableLoras = ["None", ...options];
+                            console.log("[Autopilot LoRA] Found", availableLoras.length - 1, "LoRAs from ComfyUI");
+                            return availableLoras;
                         }
                     }
                 }
             }
-        } catch (error) {
-            console.error("[Autopilot LoRA] Failed to fetch LoRAs:", error);
         }
+        
+        console.warn("[Autopilot LoRA] No LoRA inputs found in node definitions");
+        availableLoras = ["None"];
+        return availableLoras;
+        
+    } catch (error) {
+        console.error("[Autopilot LoRA] Failed to fetch LoRAs:", error);
+        availableLoras = ["None"];
+        return availableLoras;
     }
-    return availableLoras;
 }
 
 // Fetch LoRA catalog info
@@ -58,283 +58,291 @@ async function getLoraInfo(loraName) {
     return null;
 }
 
-// Show LoRA chooser dialog (properly centered)
-function showLoraChooser(callback, currentValue = null) {
-    const dialog = document.createElement('div');
-    dialog.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: rgba(0,0,0,0.8);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-    `;
-
-    const content = document.createElement('div');
-    content.style.cssText = `
-        background: #202020;
-        border: 2px solid #444;
-        border-radius: 8px;
-        padding: 20px;
-        width: 500px;
-        max-height: 80vh;
-        overflow: auto;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    `;
-
-    const title = document.createElement('h3');
-    title.textContent = 'Select LoRA';
-    title.style.cssText = 'margin: 0 0 15px 0; color: #fff; font-size: 18px;';
-    content.appendChild(title);
-
-    const search = document.createElement('input');
-    search.type = 'text';
-    search.placeholder = 'Search LoRAs...';
-    search.style.cssText = `
-        width: 100%;
-        padding: 10px;
-        margin-bottom: 15px;
-        background: #2a2a2a;
-        border: 1px solid #444;
-        color: #fff;
-        border-radius: 4px;
-        font-size: 14px;
-        box-sizing: border-box;
-    `;
-    content.appendChild(search);
-
-    const list = document.createElement('div');
-    list.style.cssText = `
-        max-height: 400px;
-        overflow-y: auto;
-        margin-bottom: 15px;
-    `;
-
-    function updateList(filter = '') {
-        list.innerHTML = '';
-        const filtered = availableLoras.filter(lora => 
-            lora.toLowerCase().includes(filter.toLowerCase())
-        );
-
-        if (filtered.length === 0) {
-            const noResults = document.createElement('div');
-            noResults.textContent = 'No LoRAs found';
-            noResults.style.cssText = 'padding: 20px; text-align: center; color: #888;';
-            list.appendChild(noResults);
-            return;
-        }
-
-        filtered.forEach(lora => {
-            const item = document.createElement('div');
-            item.textContent = lora;
-            item.style.cssText = `
-                padding: 10px;
-                cursor: pointer;
-                border-bottom: 1px solid #333;
-                color: #fff;
-                transition: background 0.2s;
-                ${lora === currentValue ? 'background: #3a5a7a;' : ''}
-            `;
-            item.onmouseenter = () => item.style.background = '#3a5a7a';
-            item.onmouseleave = () => item.style.background = lora === currentValue ? '#3a5a7a' : 'transparent';
-            item.onclick = () => {
-                callback(lora);
-                document.body.removeChild(dialog);
-            };
-            list.appendChild(item);
-        });
-    }
-
-    search.oninput = (e) => updateList(e.target.value);
-    content.appendChild(list);
-
-    const buttonContainer = document.createElement('div');
-    buttonContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px;';
+// Show LoRA chooser (like rgthree's showLoraChooser using LiteGraph.ContextMenu)
+async function showLoraChooser(callback, currentValue = null) {
+    await getAvailableLoras();
     
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = `
-        padding: 10px 20px;
-        background: #444;
-        border: none;
-        color: #fff;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-    `;
-    cancelBtn.onmouseenter = () => cancelBtn.style.background = '#555';
-    cancelBtn.onmouseleave = () => cancelBtn.style.background = '#444';
-    cancelBtn.onclick = () => document.body.removeChild(dialog);
-    buttonContainer.appendChild(cancelBtn);
-
-    content.appendChild(buttonContainer);
-    dialog.appendChild(content);
-
-    dialog.onclick = (e) => {
-        if (e.target === dialog) {
-            document.body.removeChild(dialog);
-        }
-    };
-
-    document.body.appendChild(dialog);
-    updateList();
-    search.focus();
+    const loras = availableLoras.length > 0 ? availableLoras : ["None"];
+    
+    new LiteGraph.ContextMenu(loras, {
+        event: window.event || { clientX: 100, clientY: 100 },
+        title: "Choose a LoRA",
+        scale: Math.max(1, app.canvas.ds?.scale ?? 1),
+        className: "dark",
+        callback: callback
+    });
 }
 
-// Custom LoRA Widget (like rgthree's PowerLoraLoaderWidget)
+// Manual LoRA Widget (matching rgthree's PowerLoraLoaderWidget exactly)
 class ManualLoraWidget {
     constructor(name, node) {
         this.name = name;
         this.type = "manual_lora";
         this.node = node;
         this.value = {
-            lora: "None",
+            lora: null,
             strength: 1.0,
             on: true
         };
         this.y = 0;
+        this.last_y = 0;
         this.options = { serialize: true };
+        this.hitAreas = {
+            toggle: { bounds: [0, 0], onDown: this.onToggleDown.bind(this) },
+            lora: { bounds: [0, 0], onClick: this.onLoraClick.bind(this) },
+            strengthDec: { bounds: [0, 0], onClick: this.onStrengthDecDown.bind(this) },
+            strengthVal: { bounds: [0, 0], onClick: this.onStrengthValUp.bind(this) },
+            strengthInc: { bounds: [0, 0], onClick: this.onStrengthIncDown.bind(this) },
+            strengthAny: { bounds: [0, 0], onMove: this.onStrengthAnyMove.bind(this) }
+        };
+        this.mouseDowned = null;
+        this.isMouseDownedAndOver = false;
+        this.downedHitAreasForMove = [];
+        this.downedHitAreasForClick = [];
+        this.haveMouseMovedStrength = false;
     }
 
     draw(ctx, node, widgetWidth, posY, widgetHeight) {
-        const margin = 15;
-        const midY = posY + widgetHeight / 2;
-        
+        const margin = 10;
+        const innerMargin = margin * 0.33;
+        const midY = posY + widgetHeight * 0.5;
+        let posX = margin;
+
         ctx.save();
-        ctx.fillStyle = "#222";
-        ctx.fillRect(margin, posY, widgetWidth - margin * 2, widgetHeight);
-        ctx.strokeStyle = "#444";
-        ctx.strokeRect(margin, posY, widgetWidth - margin * 2, widgetHeight);
-        
-        // Toggle button
-        const toggleSize = 16;
-        const toggleX = margin + 10;
-        ctx.fillStyle = this.value.on ? "#4a7" : "#666";
+
+        // Draw rounded rectangle background
+        ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
+        ctx.fillStyle = LiteGraph.WIDGET_BGCOLOR;
         ctx.beginPath();
-        ctx.arc(toggleX + toggleSize/2, midY, toggleSize/2, 0, Math.PI * 2);
+        ctx.roundRect(margin, posY, widgetWidth - margin * 2, widgetHeight, [widgetHeight * 0.5]);
         ctx.fill();
+        ctx.stroke();
+
+        // Draw toggle
+        const toggleRadius = widgetHeight * 0.36;
+        const toggleBgWidth = widgetHeight * 1.5;
         
-        // LoRA name (clickable)
-        const nameX = toggleX + toggleSize + 10;
-        const nameWidth = widgetWidth - nameX - 120 - margin * 2;
-        ctx.fillStyle = this.value.on ? "#fff" : "#888";
-        ctx.font = "12px Arial";
+        // Toggle background
+        ctx.beginPath();
+        ctx.roundRect(posX + 4, posY + 4, toggleBgWidth - 8, widgetHeight - 8, [widgetHeight * 0.5]);
+        ctx.globalAlpha = app.canvas.editor_alpha * 0.25;
+        ctx.fillStyle = "rgba(255,255,255,0.45)";
+        ctx.fill();
+        ctx.globalAlpha = app.canvas.editor_alpha;
+
+        // Toggle circle
+        ctx.fillStyle = this.value.on === true ? "#89B" : "#888";
+        const toggleX = this.value.on === false ? posX + widgetHeight * 0.5 : posX + widgetHeight;
+        ctx.beginPath();
+        ctx.arc(toggleX, posY + widgetHeight * 0.5, toggleRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        this.hitAreas.toggle.bounds = [posX, toggleBgWidth];
+        posX += toggleBgWidth + innerMargin;
+
+        if (!this.value.on) {
+            ctx.globalAlpha = app.canvas.editor_alpha * 0.4;
+        }
+
+        ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
+
+        // Draw strength controls on the right
+        let rposX = widgetWidth - margin - innerMargin - innerMargin;
+        
+        // Strength arrows and value
+        const arrowWidth = 9;
+        const arrowHeight = 10;
+        const numberWidth = 32;
+        const strengthInnerMargin = 3;
+
+        rposX = rposX - arrowWidth - strengthInnerMargin - numberWidth - strengthInnerMargin - arrowWidth;
+
+        // Left arrow (decrease)
+        ctx.fill(new Path2D(`M ${rposX} ${midY} l ${arrowWidth} ${arrowHeight / 2} l 0 -${arrowHeight} L ${rposX} ${midY} z`));
+        this.hitAreas.strengthDec.bounds = [rposX, arrowWidth];
+        rposX += arrowWidth + strengthInnerMargin;
+
+        // Strength value
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.value.strength.toFixed(2), rposX + numberWidth / 2, midY);
+        this.hitAreas.strengthVal.bounds = [rposX, numberWidth];
+        rposX += numberWidth + strengthInnerMargin;
+
+        // Right arrow (increase)
+        ctx.fill(new Path2D(`M ${rposX} ${midY - arrowHeight / 2} l ${arrowWidth} ${arrowHeight / 2} l -${arrowWidth} ${arrowHeight / 2} v -${arrowHeight} z`));
+        this.hitAreas.strengthInc.bounds = [rposX, arrowWidth];
+
+        // Strength "any" area for mouse drag
+        const strengthStartX = rposX - numberWidth - strengthInnerMargin - arrowWidth;
+        this.hitAreas.strengthAny.bounds = [strengthStartX, arrowWidth + strengthInnerMargin + numberWidth + strengthInnerMargin + arrowWidth];
+
+        rposX = strengthStartX - innerMargin;
+
+        // Draw LoRA name
+        const loraWidth = rposX - posX;
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        const displayName = this.value.lora || "None";
-        const truncated = displayName.length > 30 ? displayName.substring(0, 27) + "..." : displayName;
-        ctx.fillText(truncated, nameX, midY);
-        
-        // Strength controls
-        const strengthX = widgetWidth - margin - 100;
-        ctx.fillStyle = this.value.on ? "#fff" : "#888";
-        ctx.textAlign = "center";
-        
-        // Decrease button
-        ctx.fillStyle = "#444";
-        ctx.fillRect(strengthX, posY + 8, 25, widgetHeight - 16);
-        ctx.fillStyle = this.value.on ? "#fff" : "#888";
-        ctx.fillText("-", strengthX + 12.5, midY);
-        
-        // Value display
-        ctx.fillStyle = "#333";
-        ctx.fillRect(strengthX + 28, posY + 8, 40, widgetHeight - 16);
-        ctx.fillStyle = this.value.on ? "#fff" : "#888";
-        ctx.fillText(this.value.strength.toFixed(2), strengthX + 48, midY);
-        
-        // Increase button
-        ctx.fillStyle = "#444";
-        ctx.fillRect(strengthX + 71, posY + 8, 25, widgetHeight - 16);
-        ctx.fillStyle = this.value.on ? "#fff" : "#888";
-        ctx.fillText("+", strengthX + 83.5, midY);
-        
+        const loraLabel = String(this.value.lora || "None");
+        ctx.fillText(this.fitString(ctx, loraLabel, loraWidth), posX, midY);
+        this.hitAreas.lora.bounds = [posX, loraWidth];
+
+        ctx.globalAlpha = app.canvas.editor_alpha;
         ctx.restore();
-        
-        // Store hit areas for mouse events
-        this.hitAreas = {
-            toggle: [toggleX, posY, toggleSize + 20, widgetHeight],
-            lora: [nameX, posY, nameWidth, widgetHeight],
-            decrease: [strengthX, posY + 8, 25, widgetHeight - 16],
-            value: [strengthX + 28, posY + 8, 40, widgetHeight - 16],
-            increase: [strengthX + 71, posY + 8, 25, widgetHeight - 16]
-        };
-        
+
         this.last_y = posY;
     }
 
+    fitString(ctx, str, maxWidth) {
+        let width = ctx.measureText(str).width;
+        if (width <= maxWidth) return str;
+        
+        const ellipsis = "…";
+        const ellipsisWidth = ctx.measureText(ellipsis).width;
+        if (width <= ellipsisWidth) return str;
+        
+        let len = str.length;
+        while (len > 0 && ctx.measureText(str.substring(0, len)).width + ellipsisWidth > maxWidth) {
+            len--;
+        }
+        return str.substring(0, len) + ellipsis;
+    }
+
+    clickWasWithinBounds(pos, bounds) {
+        let xStart = bounds[0];
+        let xEnd = xStart + (bounds.length > 2 ? bounds[2] : bounds[1]);
+        const clickedX = pos[0] >= xStart && pos[0] <= xEnd;
+        if (bounds.length === 2) {
+            return clickedX;
+        }
+        return clickedX && pos[1] >= bounds[1] && pos[1] <= bounds[1] + bounds[3];
+    }
+
     mouse(event, pos, node) {
-        if (!this.hitAreas) return false;
-        
-        const [x, y] = pos;
-        const localY = y - this.last_y;
-        
-        // Check toggle
-        const [tx, ty, tw, th] = this.hitAreas.toggle;
-        if (x >= tx && x <= tx + tw && localY >= 0 && localY <= th) {
-            if (event.type === "pointerdown") {
-                this.value.on = !this.value.on;
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-        }
-        
-        // Check LoRA name (open chooser)
-        const [lx, ly, lw, lh] = this.hitAreas.lora;
-        if (x >= lx && x <= lx + lw && localY >= 0 && localY <= lh) {
-            if (event.type === "pointerdown") {
-                showLoraChooser((selectedLora) => {
-                    this.value.lora = selectedLora;
-                    node.setDirtyCanvas(true, true);
-                }, this.value.lora);
-                return true;
-            }
-        }
-        
-        // Check decrease button
-        const [dx, dy, dw, dh] = this.hitAreas.decrease;
-        if (x >= dx && x <= dx + dw && localY >= dy - this.last_y && localY <= dy - this.last_y + dh) {
-            if (event.type === "pointerdown") {
-                this.value.strength = Math.max(0, Math.round((this.value.strength - 0.05) * 100) / 100);
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-        }
-        
-        // Check value (open input)
-        const [vx, vy, vw, vh] = this.hitAreas.value;
-        if (x >= vx && x <= vx + vw && localY >= vy - this.last_y && localY <= vy - this.last_y + vh) {
-            if (event.type === "pointerdown") {
-                const newValue = prompt("Enter strength value:", this.value.strength);
-                if (newValue !== null) {
-                    const parsed = parseFloat(newValue);
-                    if (!isNaN(parsed)) {
-                        this.value.strength = Math.round(parsed * 100) / 100;
-                        node.setDirtyCanvas(true, true);
+        if (event.type == "pointerdown") {
+            this.mouseDowned = [...pos];
+            this.isMouseDownedAndOver = true;
+            this.downedHitAreasForMove = [];
+            this.downedHitAreasForClick = [];
+            
+            let anyHandled = false;
+            for (const [key, part] of Object.entries(this.hitAreas)) {
+                if (this.clickWasWithinBounds(pos, part.bounds)) {
+                    if (part.onMove) {
+                        this.downedHitAreasForMove.push(part);
+                    }
+                    if (part.onClick) {
+                        this.downedHitAreasForClick.push(part);
+                    }
+                    if (part.onDown) {
+                        const thisHandled = part.onDown(event, pos, node, part);
+                        anyHandled = anyHandled || thisHandled == true;
                     }
                 }
-                return true;
             }
+            return anyHandled || true;
         }
-        
-        // Check increase button
-        const [ix, iy, iw, ih] = this.hitAreas.increase;
-        if (x >= ix && x <= ix + iw && localY >= iy - this.last_y && localY <= iy - this.last_y + ih) {
-            if (event.type === "pointerdown") {
-                this.value.strength = Math.round((this.value.strength + 0.05) * 100) / 100;
-                node.setDirtyCanvas(true, true);
-                return true;
+
+        if (event.type == "pointerup") {
+            if (!this.mouseDowned) return true;
+            
+            this.downedHitAreasForMove = [];
+            const wasMouseDownedAndOver = this.isMouseDownedAndOver;
+            this.mouseDowned = null;
+            this.isMouseDownedAndOver = false;
+            this.haveMouseMovedStrength = false;
+            
+            let anyHandled = false;
+            for (const part of this.downedHitAreasForClick) {
+                if (this.clickWasWithinBounds(pos, part.bounds)) {
+                    const thisHandled = part.onClick(event, pos, node, part);
+                    anyHandled = anyHandled || thisHandled == true;
+                }
             }
+            this.downedHitAreasForClick = [];
+            
+            return anyHandled || true;
         }
-        
+
+        if (event.type == "pointermove") {
+            this.isMouseDownedAndOver = !!this.mouseDowned;
+            if (this.mouseDowned && 
+                (pos[0] < 15 || pos[0] > node.size[0] - 15 || 
+                 pos[1] < this.last_y || pos[1] > this.last_y + LiteGraph.NODE_WIDGET_HEIGHT)) {
+                this.isMouseDownedAndOver = false;
+            }
+            
+            for (const part of this.downedHitAreasForMove) {
+                if (part.onMove) {
+                    part.onMove(event, pos, node, part);
+                }
+            }
+            
+            return true;
+        }
+
         return false;
     }
 
+    onToggleDown(event, pos, node) {
+        this.value.on = !this.value.on;
+        this.mouseDowned = null;
+        this.isMouseDownedAndOver = false;
+        node.setDirtyCanvas(true, true);
+        return true;
+    }
+
+    onLoraClick(event, pos, node) {
+        showLoraChooser((value) => {
+            if (typeof value === "string") {
+                this.value.lora = value;
+            }
+            node.setDirtyCanvas(true, true);
+        }, this.value.lora);
+        this.mouseDowned = null;
+        this.isMouseDownedAndOver = false;
+        return true;
+    }
+
+    onStrengthDecDown(event, pos, node) {
+        this.stepStrength(-1);
+        node.setDirtyCanvas(true, true);
+        return true;
+    }
+
+    onStrengthIncDown(event, pos, node) {
+        this.stepStrength(1);
+        node.setDirtyCanvas(true, true);
+        return true;
+    }
+
+    onStrengthValUp(event, pos, node) {
+        if (this.haveMouseMovedStrength) return;
+        const canvas = app.canvas;
+        canvas.prompt("Value", this.value.strength, (v) => {
+            this.value.strength = Number(v);
+            node.setDirtyCanvas(true, true);
+        }, event);
+        return true;
+    }
+
+    onStrengthAnyMove(event, pos, node) {
+        if (event.deltaX) {
+            this.haveMouseMovedStrength = true;
+            this.value.strength = (this.value.strength ?? 1) + event.deltaX * 0.05;
+            this.value.strength = Math.round(this.value.strength * 100) / 100;
+            node.setDirtyCanvas(true, true);
+        }
+    }
+
+    stepStrength(direction) {
+        const step = 0.05;
+        this.value.strength = (this.value.strength ?? 1) + step * direction;
+        this.value.strength = Math.round(this.value.strength * 100) / 100;
+    }
+
     computeSize(width) {
-        return [width, 35];
+        return [width, LiteGraph.NODE_WIDGET_HEIGHT];
     }
 
     serializeValue() {
@@ -1097,6 +1105,100 @@ async function showLoraCatalogDialog(node) {
         content.appendChild(catalogList);
         displayCatalog();
 
+        // Indexing section
+        const indexingSection = document.createElement('div');
+        indexingSection.style.cssText = 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #444;';
+
+        const indexingTitle = document.createElement('h3');
+        indexingTitle.textContent = 'Index New LoRAs';
+        indexingTitle.style.cssText = 'margin: 0 0 10px 0; color: #fff; font-size: 16px;';
+        indexingSection.appendChild(indexingTitle);
+
+        const indexingDesc = document.createElement('p');
+        indexingDesc.textContent = 'Fetch metadata from Civitai and index unindexed LoRAs';
+        indexingDesc.style.cssText = 'margin: 0 0 10px 0; color: #aaa; font-size: 13px;';
+        indexingSection.appendChild(indexingDesc);
+
+        const indexingControls = document.createElement('div');
+        indexingControls.style.cssText = 'display: flex; gap: 10px; align-items: center;';
+
+        const maxLorasInput = document.createElement('input');
+        maxLorasInput.type = 'number';
+        maxLorasInput.value = '10';
+        maxLorasInput.min = '1';
+        maxLorasInput.max = '100';
+        maxLorasInput.style.cssText = `
+            width: 80px;
+            padding: 8px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 14px;
+        `;
+        indexingControls.appendChild(maxLorasInput);
+
+        const maxLabel = document.createElement('span');
+        maxLabel.textContent = 'max LoRAs';
+        maxLabel.style.cssText = 'color: #aaa; font-size: 13px;';
+        indexingControls.appendChild(maxLabel);
+
+        const indexBtn = document.createElement('button');
+        indexBtn.textContent = '🔄 Start Indexing';
+        indexBtn.style.cssText = `
+            flex: 1;
+            padding: 10px 20px;
+            background: #3a7a5a;
+            border: none;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        indexBtn.onmouseenter = () => indexBtn.style.background = '#4a8a6a';
+        indexBtn.onmouseleave = () => indexBtn.style.background = '#3a7a5a';
+        indexBtn.onclick = async () => {
+            const maxLoras = parseInt(maxLorasInput.value) || 10;
+            indexBtn.disabled = true;
+            indexBtn.textContent = '⏳ Indexing...';
+            indexBtn.style.background = '#666';
+            indexBtn.style.cursor = 'wait';
+
+            try {
+                const response = await api.fetchApi('/autopilot_lora/index', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ max_loras: maxLoras })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(`✅ Indexing complete!\n\nIndexed: ${result.indexed_count || 0}\nFailed: ${result.failed_count || 0}\nSkipped: ${result.skipped_count || 0}`);
+                    
+                    // Refresh the catalog display
+                    const newCatalogResponse = await api.fetchApi('/autopilot_lora/catalog');
+                    catalog = newCatalogResponse.ok ? await newCatalogResponse.json() : {};
+                    displayCatalog(search.value);
+                } else {
+                    alert('❌ Indexing failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('[Autopilot LoRA] Indexing error:', error);
+                alert('❌ Indexing failed: ' + error.message);
+            } finally {
+                indexBtn.disabled = false;
+                indexBtn.textContent = '🔄 Start Indexing';
+                indexBtn.style.background = '#3a7a5a';
+                indexBtn.style.cursor = 'pointer';
+            }
+        };
+        indexingControls.appendChild(indexBtn);
+
+        indexingSection.appendChild(indexingControls);
+        content.appendChild(indexingSection);
+
+        // Close button
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         closeBtn.style.cssText = `
