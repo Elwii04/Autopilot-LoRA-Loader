@@ -12,11 +12,10 @@ def startup_check():
         from .utils.config_manager import config
         
         # Check for new LoRAs in folder
-        lora_folder = lora_catalog.lora_folder
-        if lora_folder.exists():
+        lora_folder = lora_catalog.get_lora_directory()
+        if lora_folder and lora_folder.exists():
             lora_files = list(lora_folder.glob("*.safetensors")) + list(lora_folder.glob("*.ckpt"))
-            catalog_data = lora_catalog._load_catalog()
-            indexed_count = len(catalog_data.get("loras", []))
+            indexed_count = len(lora_catalog.catalog)
             
             new_count = len(lora_files) - indexed_count
             if new_count > 0:

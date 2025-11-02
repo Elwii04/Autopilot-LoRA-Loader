@@ -3,7 +3,7 @@ Indexing LLM Logic
 Uses LLM providers to extract structured metadata from Civitai text.
 """
 import json
-from typing import Dict, Any, Optional, List, tuple
+from typing import Dict, Any, Optional, List, Tuple
 
 from ..llm_providers.groq_provider import GroqProvider
 from ..llm_providers.gemini_provider import GeminiProvider

@@ -4,7 +4,7 @@ Implements Google Gemini API integration using google-generativeai library.
 """
 import json
 import time
-from typing import List, Dict, Any, Optional, tuple
+from typing import List, Dict, Any, Optional, Tuple
 from PIL import Image
 
 from . import BaseLLMProvider

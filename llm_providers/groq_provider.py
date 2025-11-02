@@ -4,7 +4,7 @@ Implements Groq API integration using OpenAI-compatible endpoints.
 """
 import json
 import time
-from typing import List, Dict, Any, Optional, tuple
+from typing import List, Dict, Any, Optional, Tuple
 import requests
 from PIL import Image
 
