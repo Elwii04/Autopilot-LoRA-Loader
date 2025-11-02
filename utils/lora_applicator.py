@@ -45,25 +45,31 @@ def apply_loras_to_model_clip(
     
     for lora_entry in loras_to_apply:
         lora_name = lora_entry['file']
-        weight = lora_entry.get('default_weight', 1.0)
         
-        # Ensure weight is valid
-        if not isinstance(weight, (int, float)):
-            weight = 1.0
+        # Check for manual strength first, then default weight
+        weight_model = lora_entry.get('manual_strength', lora_entry.get('default_weight', 1.0))
+        weight_clip = lora_entry.get('manual_strength_clip', weight_model)
         
-        # Clamp weight to reasonable range
-        weight = max(-2.0, min(2.0, weight))
+        # Ensure weights are valid
+        if not isinstance(weight_model, (int, float)):
+            weight_model = 1.0
+        if not isinstance(weight_clip, (int, float)):
+            weight_clip = weight_model
+        
+        # Clamp weights to reasonable range
+        weight_model = max(-2.0, min(2.0, weight_model))
+        weight_clip = max(-2.0, min(2.0, weight_clip))
         
         try:
-            print(f"[LoRAApplicator] Applying {lora_name} with weight {weight}")
+            print(f"[LoRAApplicator] Applying {lora_name} with model weight {weight_model}, clip weight {weight_clip}")
             
-            # Apply LoRA (same weight for model and clip)
+            # Apply LoRA
             result = loader.load_lora(
                 model=current_model,
                 clip=current_clip,
                 lora_name=lora_name,
-                strength_model=weight,
-                strength_clip=weight
+                strength_model=weight_model,
+                strength_clip=weight_clip
             )
             
             # Unpack result

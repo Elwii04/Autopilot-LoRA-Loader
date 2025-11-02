@@ -102,7 +102,7 @@ async def update_lora_info(request):
         
         # Update allowed fields
         entry = catalog[file_hash]
-        allowed_fields = ['summary', 'trained_words', 'tags', 'default_weight', 'display_name', 'is_character']
+        allowed_fields = ['summary', 'trained_words', 'tags', 'default_weight', 'display_name', 'is_character', 'enabled']
         
         for field in allowed_fields:
             if field in data:

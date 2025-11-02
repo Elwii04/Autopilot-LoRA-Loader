@@ -359,8 +359,11 @@ class LoRACatalog:
         return filtered
     
     def get_non_character_loras(self) -> List[Dict[str, Any]]:
-        """Get all non-character LoRAs (eligible for auto-selection)."""
-        return [entry for entry in self.catalog.values() if not entry.get('is_character', False)]
+        """Get all non-character LoRAs (eligible for auto-selection) that are enabled."""
+        return [
+            entry for entry in self.catalog.values() 
+            if not entry.get('is_character', False) and entry.get('enabled', True)
+        ]
     
     def get_known_base_families(self) -> List[str]:
         """Get list of base model families present in the catalog."""

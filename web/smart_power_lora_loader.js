@@ -637,7 +637,7 @@ app.registerExtension({
                 
                 console.log("[Autopilot LoRA] Adding spacer...");
                 // Add a spacer at the top
-                this.widgets.push(new SpacerWidget(4));
+                this.widgets.push(new SpacerWidget(8));
                 
                 console.log("[Autopilot LoRA] Adding Manual LoRA Header...");
                 // Add the header widget with Toggle All and Strength label
@@ -646,7 +646,7 @@ app.registerExtension({
                 
                 console.log("[Autopilot LoRA] Adding small spacer after header...");
                 // Add a small spacer after header
-                this.widgets.push(new SpacerWidget(2));
+                this.widgets.push(new SpacerWidget(6));
                 
                 console.log("[Autopilot LoRA] Adding Add Manual LoRA button...");
                 // Create and add "Add Manual LoRA" button using custom widget
@@ -676,8 +676,8 @@ app.registerExtension({
                 this.widgets.push(addLoraBtn);
                 console.log("[Autopilot LoRA] Add button added, total widgets now:", this.widgets.length);
                 
-                // Add a small spacer
-                this.widgets.push(new SpacerWidget(4));
+                // Add a smaller spacer between buttons
+                this.widgets.push(new SpacerWidget(2));
                 
                 console.log("[Autopilot LoRA] Adding Show LoRA Catalog button...");
                 // Create and add "Show LoRA Catalog" button using custom widget
@@ -1221,8 +1221,41 @@ function showLoraInfoDialog(loraName, catalogInfo) {
 // Show full LoRA catalog dialog (properly centered)
 async function showLoraCatalogDialog(node) {
     try {
-        const response = await api.fetchApi('/autopilot_lora/catalog');
-        const catalog = response.ok ? await response.json() : {};
+        // Fetch both catalog and all available LoRAs
+        const [catalogResponse, availableResponse] = await Promise.all([
+            api.fetchApi('/autopilot_lora/catalog'),
+            api.fetchApi('/autopilot_lora/available')
+        ]);
+        
+        const catalog = catalogResponse.ok ? await catalogResponse.json() : {};
+        const availableData = availableResponse.ok ? await availableResponse.json() : { loras: [] };
+        const allLoraFiles = availableData.loras || [];
+        
+        // Create a map of all LoRAs with their status
+        const loraMap = new Map();
+        
+        // Add all available LoRAs to the map
+        allLoraFiles.forEach(file => {
+            loraMap.set(file, {
+                file: file,
+                display_name: file,
+                indexed: false,
+                enabled: true, // Default to enabled
+                source_kind: 'unknown'
+            });
+        });
+        
+        // Overlay catalog data
+        Object.values(catalog).forEach(entry => {
+            if (entry.file && loraMap.has(entry.file)) {
+                loraMap.set(entry.file, {
+                    ...loraMap.get(entry.file),
+                    ...entry,
+                    indexed: true,
+                    enabled: entry.enabled !== false // Default to true if not specified
+                });
+            }
+        });
 
         const dialog = document.createElement('div');
         dialog.style.cssText = `
@@ -1245,9 +1278,10 @@ async function showLoraCatalogDialog(node) {
             border-radius: 8px;
             padding: 20px;
             width: 85%;
-            max-width: 900px;
+            max-width: 1000px;
             height: 85vh;
-            overflow: auto;
+            display: flex;
+            flex-direction: column;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         `;
 
@@ -1256,85 +1290,247 @@ async function showLoraCatalogDialog(node) {
         title.style.cssText = 'margin: 0 0 15px 0; color: #fff; font-size: 22px;';
         content.appendChild(title);
 
+        // Search and filter controls
+        const controlsRow = document.createElement('div');
+        controlsRow.style.cssText = 'display: flex; gap: 10px; margin-bottom: 15px; align-items: center;';
+        
         const search = document.createElement('input');
         search.type = 'text';
         search.placeholder = 'Search LoRAs...';
         search.style.cssText = `
-            width: 100%;
+            flex: 1;
             padding: 10px;
-            margin-bottom: 15px;
             background: #2a2a2a;
             border: 1px solid #444;
             color: #fff;
             border-radius: 4px;
             font-size: 14px;
-            box-sizing: border-box;
         `;
-        content.appendChild(search);
+        controlsRow.appendChild(search);
+        
+        // Filter toggle buttons
+        const filterBtns = document.createElement('div');
+        filterBtns.style.cssText = 'display: flex; gap: 5px;';
+        
+        let currentFilter = 'all'; // 'all', 'indexed', 'unindexed', 'enabled', 'disabled'
+        
+        const createFilterBtn = (label, filterType) => {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            btn.style.cssText = `
+                padding: 8px 12px;
+                background: ${filterType === 'all' ? '#3a5a7a' : '#2a2a2a'};
+                border: 1px solid #444;
+                color: #fff;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.2s;
+            `;
+            btn.onclick = () => {
+                currentFilter = filterType;
+                // Update button states
+                filterBtns.querySelectorAll('button').forEach(b => {
+                    b.style.background = '#2a2a2a';
+                    b.style.borderColor = '#444';
+                });
+                btn.style.background = '#3a5a7a';
+                btn.style.borderColor = '#5a7a9a';
+                displayCatalog(search.value);
+            };
+            btn.onmouseenter = () => {
+                if (currentFilter !== filterType) btn.style.background = '#353535';
+            };
+            btn.onmouseleave = () => {
+                if (currentFilter !== filterType) btn.style.background = '#2a2a2a';
+            };
+            return btn;
+        };
+        
+        filterBtns.appendChild(createFilterBtn('All', 'all'));
+        filterBtns.appendChild(createFilterBtn('Indexed', 'indexed'));
+        filterBtns.appendChild(createFilterBtn('Unindexed', 'unindexed'));
+        filterBtns.appendChild(createFilterBtn('Enabled', 'enabled'));
+        filterBtns.appendChild(createFilterBtn('Disabled', 'disabled'));
+        
+        controlsRow.appendChild(filterBtns);
+        content.appendChild(controlsRow);
 
         const catalogList = document.createElement('div');
-        catalogList.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;';
+        catalogList.style.cssText = 'flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; padding-right: 5px;';
 
-        function displayCatalog(filter = '') {
+        function displayCatalog(filterText = '') {
             catalogList.innerHTML = '';
             
-            const entries = Object.values(catalog);
-            const filtered = entries.filter(entry => 
-                entry.display_name?.toLowerCase().includes(filter.toLowerCase()) ||
-                entry.file?.toLowerCase().includes(filter.toLowerCase()) ||
-                entry.summary?.toLowerCase().includes(filter.toLowerCase())
-            );
+            let entries = Array.from(loraMap.values());
+            
+            // Apply filter
+            entries = entries.filter(entry => {
+                if (currentFilter === 'indexed' && !entry.indexed) return false;
+                if (currentFilter === 'unindexed' && entry.indexed) return false;
+                if (currentFilter === 'enabled' && !entry.enabled) return false;
+                if (currentFilter === 'disabled' && entry.enabled) return false;
+                
+                if (filterText) {
+                    const searchLower = filterText.toLowerCase();
+                    return (entry.display_name?.toLowerCase().includes(searchLower) ||
+                           entry.file?.toLowerCase().includes(searchLower) ||
+                           entry.summary?.toLowerCase().includes(searchLower));
+                }
+                return true;
+            });
+            
+            // Sort: indexed first, then alphabetically
+            entries.sort((a, b) => {
+                if (a.indexed !== b.indexed) return b.indexed ? 1 : -1;
+                return (a.display_name || a.file).localeCompare(b.display_name || b.file);
+            });
 
-            if (filtered.length === 0) {
+            if (entries.length === 0) {
                 const noResults = document.createElement('p');
-                noResults.textContent = filter ? 'No matching LoRAs found' : 'No LoRAs in catalog. Run indexing first.';
+                noResults.textContent = 'No matching LoRAs found';
                 noResults.style.cssText = 'color: #888; padding: 20px; text-align: center;';
                 catalogList.appendChild(noResults);
                 return;
             }
 
-            filtered.forEach(entry => {
+            entries.forEach(entry => {
                 const item = document.createElement('div');
                 item.style.cssText = `
-                    padding: 15px;
-                    background: #2a2a2a;
+                    padding: 12px;
+                    background: ${entry.indexed ? '#2a3a2a' : '#2a2a2a'};
                     border-radius: 6px;
-                    cursor: pointer;
                     transition: background 0.2s;
-                    border: 1px solid #333;
+                    border: 1px solid ${entry.enabled ? '#3a4a3a' : '#4a3a3a'};
+                    display: flex;
+                    gap: 12px;
+                    align-items: start;
+                    opacity: ${entry.enabled ? '1' : '0.6'};
                 `;
-                item.onmouseenter = () => item.style.background = '#353535';
-                item.onmouseleave = () => item.style.background = '#2a2a2a';
-                item.onclick = () => showLoraInfoDialog(entry.file, entry);
-
+                
+                // Enable/Disable toggle
+                const toggleBtn = document.createElement('button');
+                toggleBtn.textContent = entry.enabled ? '✓' : '✗';
+                toggleBtn.title = entry.enabled ? 'Click to disable' : 'Click to enable';
+                toggleBtn.style.cssText = `
+                    width: 32px;
+                    height: 32px;
+                    background: ${entry.enabled ? '#2a8a4a' : '#8a2a2a'};
+                    border: none;
+                    color: #fff;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    font-weight: bold;
+                    flex-shrink: 0;
+                    transition: all 0.2s;
+                `;
+                toggleBtn.onmouseenter = () => toggleBtn.style.transform = 'scale(1.1)';
+                toggleBtn.onmouseleave = () => toggleBtn.style.transform = 'scale(1)';
+                toggleBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    entry.enabled = !entry.enabled;
+                    
+                    // Update in backend if indexed
+                    if (entry.file_hash) {
+                        try {
+                            await api.fetchApi('/autopilot_lora/update', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    file_hash: entry.file_hash,
+                                    enabled: entry.enabled
+                                })
+                            });
+                        } catch (err) {
+                            console.error('Failed to update LoRA enabled state:', err);
+                        }
+                    }
+                    
+                    displayCatalog(search.value);
+                };
+                item.appendChild(toggleBtn);
+                
+                // Info section
+                const infoSection = document.createElement('div');
+                infoSection.style.cssText = 'flex: 1; cursor: pointer;';
+                infoSection.onclick = () => {
+                    if (entry.indexed) showLoraInfoDialog(entry.file, entry);
+                };
+                
+                const nameRow = document.createElement('div');
+                nameRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 5px;';
+                
                 const name = document.createElement('div');
                 name.textContent = entry.display_name || entry.file;
-                name.style.cssText = 'font-weight: bold; margin-bottom: 5px;';
-                item.appendChild(name);
-
-                if (entry.summary) {
-                    const summary = document.createElement('div');
-                    summary.textContent = entry.summary.substring(0, 150) + (entry.summary.length > 150 ? '...' : '');
-                    summary.style.cssText = 'font-size: 0.9em; color: #aaa; margin-bottom: 8px;';
-                    item.appendChild(summary);
-                }
-
-                const meta = document.createElement('div');
-                meta.style.cssText = 'font-size: 0.85em; color: #888; display: flex; gap: 15px;';
+                name.style.cssText = 'font-weight: bold; color: #fff; font-size: 14px;';
+                nameRow.appendChild(name);
                 
-                if (entry.base_compat && entry.base_compat.length > 0) {
-                    const base = document.createElement('span');
-                    base.textContent = `📦 ${entry.base_compat.join(', ')}`;
-                    meta.appendChild(base);
+                // Status badges
+                if (!entry.indexed) {
+                    const badge = document.createElement('span');
+                    badge.textContent = 'Not Indexed';
+                    badge.style.cssText = 'padding: 2px 6px; background: #5a4a2a; border-radius: 3px; font-size: 11px; color: #ffb;';
+                    nameRow.appendChild(badge);
+                }
+                
+                if (entry.is_character) {
+                    const badge = document.createElement('span');
+                    badge.textContent = 'Character';
+                    badge.style.cssText = 'padding: 2px 6px; background: #4a2a5a; border-radius: 3px; font-size: 11px; color: #faf;';
+                    nameRow.appendChild(badge);
+                }
+                
+                infoSection.appendChild(nameRow);
+
+                if (entry.indexed && entry.summary) {
+                    const summary = document.createElement('div');
+                    summary.textContent = entry.summary.substring(0, 120) + (entry.summary.length > 120 ? '...' : '');
+                    summary.style.cssText = 'font-size: 0.9em; color: #aaa; margin-bottom: 6px;';
+                    infoSection.appendChild(summary);
                 }
 
-                if (entry.trained_words && entry.trained_words.length > 0) {
-                    const triggers = document.createElement('span');
-                    triggers.textContent = `🏷️ ${entry.trained_words.length} triggers`;
-                    meta.appendChild(triggers);
-                }
+                if (entry.indexed) {
+                    const meta = document.createElement('div');
+                    meta.style.cssText = 'font-size: 0.85em; color: #888; display: flex; gap: 12px; flex-wrap: wrap;';
+                    
+                    if (entry.base_compat && entry.base_compat.length > 0 && entry.base_compat[0] !== 'Unknown') {
+                        const base = document.createElement('span');
+                        base.textContent = `📦 ${entry.base_compat.join(', ')}`;
+                        meta.appendChild(base);
+                    }
 
-                item.appendChild(meta);
+                    if (entry.trained_words && entry.trained_words.length > 0) {
+                        const triggers = document.createElement('span');
+                        triggers.textContent = `🏷️ ${entry.trained_words.length} triggers`;
+                        meta.appendChild(triggers);
+                    }
+                    
+                    if (entry.default_weight) {
+                        const weight = document.createElement('span');
+                        weight.textContent = `⚖️ ${entry.default_weight}`;
+                        meta.appendChild(weight);
+                    }
+
+                    infoSection.appendChild(meta);
+                } else {
+                    const notIndexedMsg = document.createElement('div');
+                    notIndexedMsg.textContent = 'Click "Start Indexing" below to fetch metadata from Civitai';
+                    notIndexedMsg.style.cssText = 'font-size: 0.85em; color: #888; font-style: italic;';
+                    infoSection.appendChild(notIndexedMsg);
+                }
+                
+                item.appendChild(infoSection);
+                
+                item.onmouseenter = () => {
+                    if (infoSection.style.background !== '#353535') {
+                        item.style.background = entry.indexed ? '#2f4a2f' : '#353535';
+                    }
+                };
+                item.onmouseleave = () => {
+                    item.style.background = entry.indexed ? '#2a3a2a' : '#2a2a2a';
+                };
+                
                 catalogList.appendChild(item);
             });
         }
