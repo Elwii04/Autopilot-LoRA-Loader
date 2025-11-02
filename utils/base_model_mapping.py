@@ -31,7 +31,11 @@ BASE_MODEL_FAMILIES = {
     ],
     'Qwen-Image': [
         'qwen', 'qwen2', 'qwen 2', 'qwen-image', 'qwen2-image',
-        'qwen-vl', 'qwen2-vl'
+        'qwen-vl', 'qwen2-vl', 'qwen image'
+    ],
+    'Qwen-Image-Edit': [
+        'qwen-image-edit', 'qwen2-image-edit', 'qwen image edit',
+        'qwen-edit', 'qwen2-edit', 'qwen edit'
     ],
     'Wan-Video 1.x': [
         'wan', 'wan 1', 'wan1', 'wan 1.3', 'wan1.3', 'wan 1.3b', 'wan1.3b',

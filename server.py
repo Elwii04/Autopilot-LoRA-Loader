@@ -87,46 +87,59 @@ async def get_lora_info(request):
 
 @PromptServer.instance.routes.post("/autopilot_lora/update")
 async def update_lora_info(request):
-    """Update information for a specific LoRA by filename. Creates entry if it doesn't exist."""
+    """Update information for a specific LoRA by file_hash or filename. Creates entry if it doesn't exist."""
     try:
         data = await request.json()
+        file_hash = data.get('file_hash')
         file_name = data.get('file_name')
         
-        if not file_name:
-            return web.json_response({"error": "No file_name specified"}, status=400)
+        if not file_hash and not file_name:
+            return web.json_response({"error": "No file_hash or file_name specified"}, status=400)
         
         catalog = load_catalog()
         
-        # Find entry by filename
+        # Find entry by file_hash or filename
         entry_hash = None
-        for hash_key, entry in catalog.items():
-            if entry.get('file') == file_name:
-                entry_hash = hash_key
-                break
+        entry = None
         
-        # If entry doesn't exist, create minimal entry with filename as key
-        if not entry_hash:
-            # Use filename as temporary key (will be replaced with hash when indexed)
-            entry_hash = f"temp_{file_name}"
-            catalog[entry_hash] = {
-                'file': file_name,
+        if file_hash:
+            # Look up by file_hash directly
+            if file_hash in catalog:
+                entry_hash = file_hash
+                entry = catalog[file_hash]
+        
+        if not entry:
+            # Look up by filename
+            for hash_key, cat_entry in catalog.items():
+                if cat_entry.get('file') == file_name or cat_entry.get('file_hash') == file_hash:
+                    entry_hash = hash_key
+                    entry = cat_entry
+                    break
+        
+        # If entry doesn't exist, create minimal entry
+        if not entry:
+            # Use file_hash if provided, otherwise use filename as temporary key
+            entry_hash = file_hash if file_hash else f"temp_{file_name}"
+            entry = {
+                'file_hash': file_hash if file_hash else entry_hash,
+                'file': file_name or '',
                 'full_path': '',
-                'display_name': file_name.replace('.safetensors', '').replace('_', ' '),
+                'display_name': (file_name or '').replace('.safetensors', '').replace('_', ' '),
                 'available': True,
                 'summary': '',
                 'trained_words': [],
                 'tags': [],
-                'enabled': True,  # Default to enabled
+                'enabled': True,
                 'base_compat': ['Unknown'],
                 'default_weight': 1.0,
                 'source': {'kind': 'unknown'},
                 'indexed_at': None,
                 'indexed_by_llm': False
             }
+            catalog[entry_hash] = entry
         
         # Update allowed fields
-        entry = catalog[entry_hash]
-        allowed_fields = ['summary', 'trained_words', 'tags', 'default_weight', 'display_name', 'enabled']
+        allowed_fields = ['summary', 'trained_words', 'tags', 'default_weight', 'display_name', 'enabled', 'base_compat']
         
         for field in allowed_fields:
             if field in data:
@@ -176,17 +189,20 @@ async def index_loras_batch(request):
         # Load current catalog to check what's already indexed
         catalog = load_catalog()
         
-        # Find unindexed LoRAs
+        # Find unindexed LoRAs (those not yet indexed by LLM or not in catalog at all)
         unindexed = []
         for lora_file in all_lora_files:
-            # Check if already in catalog by checking all entries
-            is_indexed = any(
-                entry.get('file') == lora_file.name or 
-                str(lora_file) == entry.get('file_path') or
-                str(lora_file) == entry.get('full_path')
-                for entry in catalog.values()
-            )
-            if not is_indexed:
+            # Check if already in catalog
+            catalog_entry = None
+            for entry in catalog.values():
+                if (entry.get('file') == lora_file.name or 
+                    str(lora_file) == entry.get('file_path') or
+                    str(lora_file) == entry.get('full_path')):
+                    catalog_entry = entry
+                    break
+            
+            # Add to unindexed if not in catalog OR if in catalog but not indexed by LLM
+            if catalog_entry is None or not catalog_entry.get('indexed_by_llm', False):
                 unindexed.append(lora_file)
         
         print(f"[Autopilot LoRA API] Found {len(unindexed)} unindexed LoRAs")

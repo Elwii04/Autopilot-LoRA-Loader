@@ -1083,6 +1083,36 @@ function showLoraInfoDialog(loraName, catalogInfo) {
         baseModel.style.cssText = 'margin: 0 0 15px 0; color: #fff;';
         content.appendChild(baseModel);
 
+        const baseModelSelect = document.createElement('select');
+        baseModelSelect.style.cssText = `
+            width: 100%;
+            margin-bottom: 15px;
+            padding: 8px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+            display: none;
+        `;
+        // All available base model families
+        const baseModelFamilies = [
+            'Unknown', 'Flux-1', 'SD1.x', 'SD2.x', 'SDXL', 'Qwen-Image', 'Qwen-Image-Edit',
+            'Wan-Video 1.x', 'Wan-Video 2.2', 'Wan-Video 2.5', 'AuraFlow', 'PixArt',
+            'Kolors', 'Hunyuan', 'Lumina', 'Playground', 'CogVideoX', 'Mochi', 'LTX-Video'
+        ];
+        baseModelFamilies.forEach(family => {
+            const option = document.createElement('option');
+            option.value = family;
+            option.textContent = family;
+            if (catalogInfo.base_compat && catalogInfo.base_compat.includes(family)) {
+                option.selected = true;
+            }
+            baseModelSelect.appendChild(option);
+        });
+        content.appendChild(baseModelSelect);
+
         // Weight
         const weightLabel = document.createElement('h3');
         weightLabel.textContent = 'Default Weight';
@@ -1168,6 +1198,8 @@ function showLoraInfoDialog(loraName, catalogInfo) {
                 triggersInput.style.display = 'block';
                 tagsContainer.style.display = 'none';
                 tagsInput.style.display = 'block';
+                baseModel.style.display = 'none';
+                baseModelSelect.style.display = 'block';
                 weightText.style.display = 'none';
                 weightInput.style.display = 'block';
                 closeBtn.textContent = 'Cancel';
@@ -1178,6 +1210,7 @@ function showLoraInfoDialog(loraName, catalogInfo) {
                     summary: summaryInput.value,
                     trained_words: triggersInput.value.split(',').map(t => t.trim()).filter(t => t),
                     tags: tagsInput.value.split(',').map(t => t.trim()).filter(t => t),
+                    base_compat: [baseModelSelect.value],
                     default_weight: parseFloat(weightInput.value)
                 };
 
@@ -1512,7 +1545,8 @@ async function showLoraCatalogDialog(node) {
                 const infoSection = document.createElement('div');
                 infoSection.style.cssText = 'flex: 1; cursor: pointer;';
                 infoSection.onclick = () => {
-                    if (entry.indexed) showLoraInfoDialog(entry.file, entry);
+                    // Allow clicking on any LoRA to view/edit info
+                    showLoraInfoDialog(entry.file, entry);
                 };
                 
                 const nameRow = document.createElement('div');
