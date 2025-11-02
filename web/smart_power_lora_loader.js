@@ -10,7 +10,18 @@ let availableLoras = [];
 // Fetch LoRAs from ComfyUI (gets ALL LoRAs from folder_paths, not just indexed ones)
 async function getAvailableLoras() {
     try {
-        // Get object_info which contains all available LoRAs
+        console.log("[Autopilot LoRA] Fetching available LoRAs...");
+        
+        // First try to get from our API endpoint (fastest and most reliable)
+        const response = await api.fetchApi('/autopilot_lora/available');
+        if (response.ok) {
+            const data = await response.json();
+            availableLoras = ["None", ...(data.loras || [])];
+            console.log("[Autopilot LoRA] Found", availableLoras.length - 1, "LoRAs from API");
+            return availableLoras;
+        }
+        
+        // Fallback: Try to get object_info which contains all available LoRAs
         const objectInfo = await api.getObjectInfo();
         
         // Find any node that has lora inputs to get the list
@@ -456,6 +467,129 @@ class SpacerWidget {
     }
 }
 
+// Header Widget with Toggle All and Strength label
+class ManualLoraHeaderWidget {
+    constructor() {
+        this.name = "manual_lora_header";
+        this.type = "manual_lora_header";
+        this.value = "";
+        this.options = { serialize: false };
+        this.y = 0;
+        this.last_y = 0;
+        this.isMouseDownedAndOver = false;
+        this.toggleBounds = null;
+    }
+
+    draw(ctx, node, widgetWidth, posY, widgetHeight) {
+        // Only show if there are manual LoRAs
+        const hasManualLoras = node.widgets?.some(w => w.type === "manual_lora");
+        if (!hasManualLoras) return;
+
+        const margin = 10;
+        const innerMargin = margin * 0.33;
+        const midY = posY + widgetHeight * 0.5;
+        let posX = margin + 4; // Add some extra left margin
+
+        ctx.save();
+        ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
+        ctx.globalAlpha = app.canvas.editor_alpha * 0.55;
+
+        // Draw toggle all button
+        const toggleRadius = widgetHeight * 0.36;
+        const toggleBgWidth = widgetHeight * 1.5;
+        
+        // Determine toggle state
+        let allOn = true;
+        let allOff = true;
+        for (const widget of node.widgets || []) {
+            if (widget.type === "manual_lora") {
+                const on = widget.value?.on;
+                allOn = allOn && on === true;
+                allOff = allOff && on === false;
+                if (!allOn && !allOff) break;
+            }
+        }
+        const toggleState = allOn ? true : (allOff ? false : null);
+
+        // Toggle background
+        ctx.beginPath();
+        ctx.roundRect(posX, posY + 4, toggleBgWidth - 8, widgetHeight - 8, [widgetHeight * 0.5]);
+        ctx.globalAlpha = app.canvas.editor_alpha * 0.25;
+        ctx.fillStyle = "rgba(255,255,255,0.45)";
+        ctx.fill();
+        ctx.globalAlpha = app.canvas.editor_alpha * 0.55;
+
+        // Toggle circle
+        ctx.fillStyle = toggleState === true ? "#89B" : (toggleState === false ? "#888" : "#AA8");
+        const toggleX = toggleState === false ? posX + widgetHeight * 0.5 : posX + widgetHeight;
+        ctx.beginPath();
+        ctx.arc(toggleX, posY + widgetHeight * 0.5, toggleRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        this.toggleBounds = [posX, posY, toggleBgWidth, widgetHeight];
+        posX += toggleBgWidth + innerMargin;
+
+        // Draw "Toggle All" text
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Toggle All", posX, midY);
+
+        // Draw "Strength" label on the right
+        const strengthLabelX = widgetWidth - margin - 60; // Position for "Strength" label
+        ctx.textAlign = "center";
+        ctx.fillText("Strength", strengthLabelX, midY);
+
+        ctx.restore();
+        this.last_y = posY;
+    }
+
+    mouse(event, pos, node) {
+        if (event.type === "pointerdown" && this.toggleBounds) {
+            const [x, y, w, h] = this.toggleBounds;
+            if (pos[0] >= x && pos[0] <= x + w && pos[1] >= y && pos[1] <= y + h) {
+                this.isMouseDownedAndOver = true;
+                return true;
+            }
+        }
+        
+        if (event.type === "pointerup" && this.isMouseDownedAndOver && this.toggleBounds) {
+            const [x, y, w, h] = this.toggleBounds;
+            if (pos[0] >= x && pos[0] <= x + w && pos[1] >= y && pos[1] <= y + h) {
+                // Toggle all manual LoRAs
+                let allOn = true;
+                for (const widget of node.widgets || []) {
+                    if (widget.type === "manual_lora" && !widget.value?.on) {
+                        allOn = false;
+                        break;
+                    }
+                }
+                const newState = !allOn;
+                for (const widget of node.widgets || []) {
+                    if (widget.type === "manual_lora") {
+                        widget.value.on = newState;
+                    }
+                }
+                node.setDirtyCanvas(true, true);
+            }
+            this.isMouseDownedAndOver = false;
+            return true;
+        }
+        
+        return false;
+    }
+
+    computeSize(width) {
+        // Only show if there are manual LoRAs
+        const node = this.node || (this.options && this.options.node);
+        const hasManualLoras = node?.widgets?.some(w => w.type === "manual_lora");
+        return hasManualLoras ? [width, LiteGraph.NODE_WIDGET_HEIGHT] : [width, 0];
+    }
+
+    serializeValue() {
+        return "";
+    }
+}
+
 // Register the extension
 app.registerExtension({
     name: "autopilot.smart.power.lora.loader",
@@ -504,6 +638,11 @@ app.registerExtension({
                 console.log("[Autopilot LoRA] Adding spacer...");
                 // Add a spacer at the top
                 this.widgets.push(new SpacerWidget(4));
+                
+                console.log("[Autopilot LoRA] Adding Manual LoRA Header...");
+                // Add the header widget with Toggle All and Strength label
+                const headerWidget = new ManualLoraHeaderWidget();
+                this.widgets.push(headerWidget);
                 
                 console.log("[Autopilot LoRA] Adding Add Manual LoRA button...");
                 // Create and add "Add Manual LoRA" button using custom widget
@@ -1178,7 +1317,10 @@ async function showLoraCatalogDialog(node) {
                     
                     // Refresh the catalog display
                     const newCatalogResponse = await api.fetchApi('/autopilot_lora/catalog');
-                    catalog = newCatalogResponse.ok ? await newCatalogResponse.json() : {};
+                    const newCatalog = newCatalogResponse.ok ? await newCatalogResponse.json() : {};
+                    // Replace the catalog entries
+                    Object.keys(catalog).forEach(key => delete catalog[key]);
+                    Object.assign(catalog, newCatalog);
                     displayCatalog(search.value);
                 } else {
                     alert('❌ Indexing failed: ' + (result.error || 'Unknown error'));

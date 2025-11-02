@@ -261,8 +261,22 @@ async def index_loras_batch(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+@PromptServer.instance.routes.get("/autopilot_lora/available")
+async def get_available_loras(request):
+    """Return all available LoRAs from folder_paths (for the chooser)."""
+    try:
+        import folder_paths
+        lora_list = folder_paths.get_filename_list("loras")
+        return web.json_response({"loras": lora_list})
+    except Exception as e:
+        print(f"[Autopilot LoRA API] Error in /available endpoint: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 print("[Autopilot LoRA API] Registered API endpoints:")
 print("  - GET /autopilot_lora/catalog")
 print("  - GET /autopilot_lora/info?file=<filename>")
 print("  - POST /autopilot_lora/update")
 print("  - POST /autopilot_lora/index")
+print("  - GET /autopilot_lora/available")
+
