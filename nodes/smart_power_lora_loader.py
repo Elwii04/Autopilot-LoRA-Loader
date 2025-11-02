@@ -24,6 +24,7 @@ from ..utils.prompt_builder import build_final_prompt, build_prompt_from_llm_out
 from ..utils.show_info_generator import generate_info_files_for_catalog
 from ..utils.civitai_utils import build_civitai_summary_text
 from ..utils.model_fetcher import fetch_all_available_models, parse_model_string
+from ..utils.flexible_input_types import FlexibleOptionalInputType, any_type
 
 # Try to import ComfyUI modules
 try:
@@ -84,7 +85,7 @@ class SmartPowerLoRALoader:
                     "tooltip": "LLM model for generating prompts and selecting LoRAs. If using an image input, choose a vision-capable model (e.g., gemini: gemini-1.5-flash). Otherwise any model works."
                 }),
             },
-            "optional": {
+            "optional": FlexibleOptionalInputType(type=any_type, data={
                 "model": ("MODEL", {
                     "tooltip": "Input MODEL from your checkpoint loader. LoRAs will be applied to this model and returned."
                 }),
@@ -93,11 +94,6 @@ class SmartPowerLoRALoader:
                 }),
                 "image": ("IMAGE", {
                     "tooltip": "Optional reference image for vision-capable models. The AI can analyze this image to better select relevant LoRAs and generate contextual prompts. Requires a vision model (e.g., gemini: gemini-1.5-flash)."
-                }),
-                "manual_loras": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "tooltip": "Hidden input - Managed by the JavaScript UI. This field is automatically populated with manually selected LoRAs from the UI widgets. Do not edit directly."
                 }),
                 "custom_instruction": ("STRING", {
                     "multiline": True,
@@ -134,7 +130,8 @@ class SmartPowerLoRALoader:
                     "default": "llm_decides",
                     "tooltip": "Where to place trigger words in the prompt. 'llm_decides' (recommended): AI integrates them naturally. 'start': All triggers at beginning. 'end': All triggers at end."
                 }),
-            }
+            }),
+            "hidden": {},
         }
     
     RETURN_TYPES = ("MODEL", "CLIP", "STRING", "STRING", "STRING")
@@ -157,17 +154,18 @@ class SmartPowerLoRALoader:
         model: Any = None,
         clip: Any = None,
         image: Any = None,
-        manual_loras: str = "",
         custom_instruction: str = "",
         system_prompt: str = "",
         enable_negative_prompt: bool = False,
         reindex_on_run: bool = False,
         temperature: float = 0.85,
         max_loras: int = 6,
-        trigger_position: str = "llm_decides"
+        trigger_position: str = "llm_decides",
+        **kwargs  # Capture dynamic lora_* inputs from JavaScript
     ) -> Tuple[Any, Any, str, str, str]:
         """
         Main processing function.
+        Handles both manual LoRAs (via dynamic lora_* inputs) and auto-selection.
         
         Returns:
             Tuple of (MODEL, CLIP, final_prompt, negative_prompt, selected_loras_json)
@@ -185,10 +183,23 @@ class SmartPowerLoRALoader:
             self._reindex_new_loras(indexing_provider, indexing_model_name)
             self.indexing_done = True
         
-        # Step 2: Parse manual LoRAs
-        manual_lora_list = self._parse_lora_list(manual_loras)
-        manual_lora_entries = lora_catalog.filter_by_names(manual_lora_list)
-        print(f"Manual LoRAs: {len(manual_lora_entries)}")
+        # Step 2: Parse manual LoRAs from dynamic kwargs (lora_1, lora_2, etc.)
+        manual_lora_entries = []
+        for key, value in kwargs.items():
+            key_upper = key.upper()
+            if key_upper.startswith('LORA_') and isinstance(value, dict):
+                if value.get('on') and value.get('lora'):
+                    lora_file = value['lora']
+                    entry = lora_catalog.get_entry_by_name(lora_file)
+                    if entry:
+                        # Store strength for later application
+                        entry['manual_strength'] = value.get('strength', 1.0)
+                        entry['manual_strength_clip'] = value.get('strengthTwo', value.get('strength', 1.0))
+                        manual_lora_entries.append(entry)
+                    else:
+                        print(f"⚠️ Manual LoRA not found in catalog: {lora_file}")
+        
+        print(f"Manual LoRAs from dynamic inputs: {len(manual_lora_entries)}")
         
         # Step 3: Auto-select LoRAs (always enabled now)
         auto_selected_entries = []
@@ -239,7 +250,8 @@ class SmartPowerLoRALoader:
             negative_prompt = ""
         
         # Step 8: Build selection JSON for debugging
-        selection_json = self._build_selection_json(all_selected, manual_lora_list)
+        manual_lora_names = [entry['file'] for entry in manual_lora_entries]
+        selection_json = self._build_selection_json(all_selected, manual_lora_names)
         
         print(f"Final prompt length: {len(final_prompt)} chars")
         print("="*60 + "\n")

@@ -811,19 +811,6 @@ app.registerExtension({
     }
 });
 
-// Fetch LoRA catalog info
-async function getLoraInfo(loraName) {
-    try {
-        const response = await api.fetchApi('/autopilot_lora/info?file=' + encodeURIComponent(loraName));
-        if (response.ok) {
-            return await response.json();
-        }
-    } catch (error) {
-        console.warn("[Autopilot LoRA] Could not fetch info for:", loraName, error);
-    }
-    return null;
-}
-
 // Show LoRA info dialog (properly centered with editing capability)
 function showLoraInfoDialog(loraName, catalogInfo) {
     const dialog = document.createElement('div');
