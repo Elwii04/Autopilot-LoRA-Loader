@@ -87,18 +87,42 @@ async def get_lora_info(request):
 
 @PromptServer.instance.routes.post("/autopilot_lora/update")
 async def update_lora_info(request):
-    """Update information for a specific LoRA."""
+    """Update information for a specific LoRA. Creates entry if it doesn't exist."""
     try:
         data = await request.json()
         file_hash = data.get('file_hash')
+        file_name = data.get('file_name')  # Optional: for creating new entries
         
         if not file_hash:
             return web.json_response({"error": "No file_hash specified"}, status=400)
         
         catalog = load_catalog()
         
+        # If entry doesn't exist and file_name provided, create minimal entry
         if file_hash not in catalog:
-            return web.json_response({"error": "LoRA not found in catalog"}, status=404)
+            if not file_name:
+                return web.json_response({"error": "LoRA not found in catalog"}, status=404)
+            
+            # Create minimal entry
+            from datetime import datetime
+            catalog[file_hash] = {
+                'file_hash': file_hash,
+                'file': file_name,
+                'full_path': '',
+                'display_name': file_name,
+                'sha256': file_hash,
+                'available': True,
+                'summary': '',
+                'trained_words': [],
+                'tags': [],
+                'is_character': False,
+                'enabled': True,
+                'base_compat': ['Unknown'],
+                'default_weight': 1.0,
+                'source': {'kind': 'unknown'},
+                'indexed_at': None,
+                'indexed_by_llm': False
+            }
         
         # Update allowed fields
         entry = catalog[file_hash]
@@ -116,6 +140,8 @@ async def update_lora_info(request):
         
     except Exception as e:
         print(f"[Autopilot LoRA API] Error in /update endpoint: {e}")
+        import traceback
+        traceback.print_exc()
         return web.json_response({"error": str(e)}, status=500)
 
 

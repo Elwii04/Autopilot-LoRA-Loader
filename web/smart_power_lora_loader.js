@@ -658,13 +658,26 @@ app.registerExtension({
                         const widget = new ManualLoraWidget("manual_lora_" + node.manualLoraCounter++, node);
                         node.manualLoraWidgets.push(widget);
                         
-                        // Find the header widget and insert the new LoRA right after it (after the spacer)
-                        const headerIndex = node.widgets.findIndex(w => w.type === "manual_lora_header");
-                        if (headerIndex >= 0) {
-                            // Insert after header and its spacer (headerIndex + 2)
-                            node.widgets.splice(headerIndex + 2, 0, widget);
+                        // Find the last manual LoRA position
+                        let lastLoraIndex = -1;
+                        for (let i = node.widgets.length - 1; i >= 0; i--) {
+                            if (node.widgets[i].type === "manual_lora") {
+                                lastLoraIndex = i;
+                                break;
+                            }
+                        }
+                        
+                        if (lastLoraIndex >= 0) {
+                            // Insert after the last manual LoRA
+                            node.widgets.splice(lastLoraIndex + 1, 0, widget);
                         } else {
-                            node.widgets.push(widget);
+                            // No manual LoRAs yet, insert after header and its spacer
+                            const headerIndex = node.widgets.findIndex(w => w.type === "manual_lora_header");
+                            if (headerIndex >= 0) {
+                                node.widgets.splice(headerIndex + 2, 0, widget);
+                            } else {
+                                node.widgets.push(widget);
+                            }
                         }
                         
                         const computed = node.computeSize();
@@ -699,6 +712,28 @@ app.registerExtension({
                 });
                 
                 return r;
+            };
+            
+            // Override onDrawForeground to draw header widget on top
+            const onDrawForeground = nodeType.prototype.onDrawForeground;
+            nodeType.prototype.onDrawForeground = function(ctx) {
+                if (onDrawForeground) {
+                    onDrawForeground.apply(this, arguments);
+                }
+                
+                // Find the header widget and draw it on top
+                const headerWidget = this.widgets?.find(w => w.type === "manual_lora_header");
+                if (headerWidget && headerWidget.last_y !== undefined) {
+                    const hasManualLoras = this.widgets?.some(w => w.type === "manual_lora");
+                    if (hasManualLoras) {
+                        // Re-draw the header widget on top of everything
+                        ctx.save();
+                        const widgetWidth = this.size[0];
+                        const widgetHeight = LiteGraph.NODE_WIDGET_HEIGHT;
+                        headerWidget.draw(ctx, this, widgetWidth, headerWidget.last_y, widgetHeight);
+                        ctx.restore();
+                    }
+                }
             };
             
             // Override serialize to convert manual LoRA widgets to string
@@ -1253,9 +1288,17 @@ async function showLoraCatalogDialog(node) {
                 loraMap.set(entry.file, {
                     ...loraMap.get(entry.file),
                     ...entry,
-                    indexed: true,
+                    indexed: entry.indexed_by_llm || false,
                     enabled: entry.enabled !== false // Default to true if not specified
                 });
+            }
+        });
+        
+        // Create a reverse map from file to file_hash for quick lookup
+        const fileToHash = new Map();
+        Object.entries(catalog).forEach(([hash, entry]) => {
+            if (entry.file) {
+                fileToHash.set(entry.file, hash);
             }
         });
 
@@ -1433,34 +1476,43 @@ async function showLoraCatalogDialog(node) {
                     e.stopPropagation();
                     entry.enabled = !entry.enabled;
                     
-                    // Update in backend if indexed
-                    if (entry.file_hash) {
-                        try {
-                            const response = await api.fetchApi('/autopilot_lora/update', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    file_hash: entry.file_hash,
-                                    enabled: entry.enabled
-                                })
-                            });
-                            
-                            const result = await response.json();
-                            if (!result.success) {
-                                console.error('Failed to update LoRA enabled state:', result.error);
-                                // Revert on failure
-                                entry.enabled = !entry.enabled;
-                            } else {
-                                // Update the entry in catalog map
-                                if (catalog[entry.file_hash]) {
-                                    catalog[entry.file_hash].enabled = entry.enabled;
+                    // Get or compute file_hash
+                    let file_hash = entry.file_hash || fileToHash.get(entry.file);
+                    
+                    // Update in backend
+                    try {
+                        const response = await api.fetchApi('/autopilot_lora/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                file_hash: file_hash,
+                                file_name: entry.file,
+                                enabled: entry.enabled
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        if (!result.success) {
+                            console.error('Failed to update LoRA enabled state:', result.error);
+                            // Revert on failure
+                            entry.enabled = !entry.enabled;
+                        } else {
+                            // Update the entry in catalog map
+                            if (result.entry) {
+                                // Update file_hash if it was just created
+                                if (!file_hash && result.entry.file_hash) {
+                                    entry.file_hash = result.entry.file_hash;
+                                    fileToHash.set(entry.file, result.entry.file_hash);
+                                }
+                                if (catalog[result.entry.file_hash]) {
+                                    catalog[result.entry.file_hash].enabled = entry.enabled;
                                 }
                             }
-                        } catch (err) {
-                            console.error('Failed to update LoRA enabled state:', err);
-                            // Revert on error
-                            entry.enabled = !entry.enabled;
                         }
+                    } catch (err) {
+                        console.error('Failed to update LoRA enabled state:', err);
+                        // Revert on error
+                        entry.enabled = !entry.enabled;
                     }
                     
                     displayCatalog(search.value);
