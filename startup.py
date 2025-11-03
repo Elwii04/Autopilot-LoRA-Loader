@@ -12,18 +12,24 @@ def startup_check():
         from .utils.config_manager import config
         
         # Quick check: report catalog status
-        lora_folder = lora_catalog.get_lora_directory()
-        if lora_folder and lora_folder.exists():
-            # Recursively find all LoRA files (matching the scan behavior)
-            lora_files = list(lora_folder.rglob("*.safetensors"))
+        lora_dirs = lora_catalog.get_lora_directories()
+        if lora_dirs:
+            # Recursively find all LoRA files in all directories (matching the scan behavior)
+            lora_files = []
+            for lora_dir in lora_dirs:
+                if lora_dir.exists():
+                    lora_files.extend(list(lora_dir.rglob("*.safetensors")))
             
             # Report status
             indexed_count = sum(1 for entry in lora_catalog.catalog.values() if entry.get('indexed_by_llm', False))
             total_count = len(lora_catalog.catalog)
             total_files = len(lora_files)
             
-            print(f"[Debug] LoRA folder: {lora_folder}")
-            print(f"[Debug] Found {total_files} .safetensors files via rglob")
+            print(f"[Debug] Found {len(lora_dirs)} LoRA path(s)")
+            for i, lora_dir in enumerate(lora_dirs, 1):
+                dir_count = len(list(lora_dir.rglob("*.safetensors"))) if lora_dir.exists() else 0
+                print(f"[Debug]   Path {i}: {lora_dir} ({dir_count} files)")
+            print(f"[Debug] Total: {total_files} .safetensors files")
             print(f"[Debug] Catalog has {total_count} entries")
             print(f"[Debug] Indexed by LLM: {indexed_count}")
             

@@ -58,15 +58,19 @@ class LoRACatalog:
         except Exception as e:
             print(f"[LoRACatalog] Error saving catalog: {e}")
     
-    def get_lora_directory(self) -> Optional[Path]:
-        """Get the LoRA directory path."""
+    def get_lora_directories(self) -> List[Path]:
+        """Get all LoRA directory paths (ComfyUI can have multiple)."""
+        lora_dirs = []
+        
         if HAS_COMFY:
             try:
                 lora_paths = folder_paths.get_folder_paths("loras")
                 if lora_paths:
-                    return Path(lora_paths[0])
+                    lora_dirs = [Path(p) for p in lora_paths]
+                    print(f"[LoRACatalog] Found {len(lora_dirs)} LoRA path(s) from ComfyUI")
+                    return lora_dirs
             except Exception as e:
-                print(f"[LoRACatalog] Error getting LoRA path from ComfyUI: {e}")
+                print(f"[LoRACatalog] Error getting LoRA paths from ComfyUI: {e}")
         
         # Fallback: try common paths
         possible_paths = [
@@ -77,25 +81,36 @@ class LoRACatalog:
         
         for path in possible_paths:
             if path.exists():
-                return path
+                lora_dirs.append(path)
+                break
         
-        return None
+        return lora_dirs
+    
+    def get_lora_directory(self) -> Optional[Path]:
+        """Get the primary LoRA directory path (first one)."""
+        dirs = self.get_lora_directories()
+        return dirs[0] if dirs else None
     
     def scan_lora_files(self) -> List[Path]:
         """
-        Scan the LoRA directory for .safetensors files.
+        Scan ALL LoRA directories for .safetensors files.
         
         Returns:
             List of paths to LoRA files
         """
-        lora_dir = self.get_lora_directory()
-        if not lora_dir:
-            print("[LoRACatalog] Could not find LoRA directory")
+        lora_dirs = self.get_lora_directories()
+        if not lora_dirs:
+            print("[LoRACatalog] Could not find any LoRA directories")
             return []
         
-        # Recursively find all .safetensors files
-        lora_files = list(lora_dir.rglob("*.safetensors"))
-        print(f"[LoRACatalog] Found {len(lora_files)} LoRA files")
+        # Recursively find all .safetensors files in all directories
+        lora_files = []
+        for lora_dir in lora_dirs:
+            dir_files = list(lora_dir.rglob("*.safetensors"))
+            lora_files.extend(dir_files)
+            print(f"[LoRACatalog] Found {len(dir_files)} LoRA files in {lora_dir}")
+        
+        print(f"[LoRACatalog] Total: {len(lora_files)} LoRA files across all paths")
         
         return lora_files
     
