@@ -175,7 +175,8 @@ class LoRACatalog:
                 'kind': 'unknown'
             },
             'indexed_at': datetime.now().isoformat(),
-            'indexed_by_llm': False
+            'indexed_by_llm': False,
+            'indexing_attempted': False  # Track if we've tried to index this with LLM
         }
         
         # Extract safetensors metadata
@@ -282,6 +283,7 @@ class LoRACatalog:
         # Update with LLM data
         entry['summary'] = summary
         entry['indexed_by_llm'] = True
+        entry['indexing_attempted'] = True
         
         # Merge trained words (keep existing + add new)
         existing_words = set(entry.get('trained_words', []))
@@ -296,6 +298,22 @@ class LoRACatalog:
             entry['base_compat'] = base_compat
         
         print(f"[LoRACatalog] Marked as LLM indexed: {entry['display_name']}")
+    
+    def mark_indexing_attempted(self, file_hash: str):
+        """
+        Mark that we've attempted to index this LoRA (even if it failed or had no Civitai data).
+        This prevents re-trying LoRAs that don't have Civitai data or failed indexing.
+        
+        Args:
+            file_hash: File hash (catalog key)
+        """
+        if file_hash not in self.catalog:
+            print(f"[LoRACatalog] Hash {file_hash[:16]}... not in catalog")
+            return
+        
+        entry = self.catalog[file_hash]
+        entry['indexing_attempted'] = True
+        print(f"[LoRACatalog] Marked indexing attempted: {entry['display_name']}")
     
     def get_entry(self, file_hash: str) -> Optional[Dict[str, Any]]:
         """Get a catalog entry by hash."""

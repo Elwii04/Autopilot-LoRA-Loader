@@ -189,8 +189,13 @@ async def index_loras_batch(request):
         # Reload the global catalog from disk to get latest state (including enabled/disabled changes)
         lora_catalog.load_catalog()
         
-        # Find unindexed LoRAs (those not yet indexed by LLM or not in catalog at all)
-        # Also skip disabled LoRAs
+        # Find unindexed LoRAs that need to be processed
+        # Include LoRAs that:
+        # 1. Are not in catalog at all (new LoRAs)
+        # 2. Are in catalog, enabled, and haven't been attempted for indexing yet (indexing_attempted is False or missing)
+        # Skip LoRAs that:
+        # 1. Are disabled (enabled = False)
+        # 2. Have already been attempted for indexing (indexing_attempted = True)
         unindexed = []
         for lora_file in all_lora_files:
             # Check if already in catalog
@@ -202,17 +207,16 @@ async def index_loras_batch(request):
                     catalog_entry = entry
                     break
             
-            # Skip if entry exists but is disabled
+            # Skip if disabled
             if catalog_entry and not catalog_entry.get('enabled', True):
                 continue
             
             # Add to unindexed if:
-            # 1. Not in catalog at all (catalog_entry is None)
-            # 2. In catalog but indexed_by_llm is None/missing (not yet processed)
-            # Skip if indexed_by_llm is True (successfully indexed) or False (tried and failed/no civitai)
+            # 1. Not in catalog at all (new LoRA)
+            # 2. In catalog but indexing_attempted is False or missing (not yet tried)
             if catalog_entry is None:
                 unindexed.append(lora_file)
-            elif 'indexed_by_llm' not in catalog_entry or catalog_entry.get('indexed_by_llm') is None:
+            elif not catalog_entry.get('indexing_attempted', False):
                 unindexed.append(lora_file)
         
         print(f"[Autopilot LoRA API] Found {len(unindexed)} unindexed LoRAs")
@@ -282,16 +286,14 @@ async def index_loras_batch(request):
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] ✓ Indexed with LLM: {lora_file.name}")
                     else:
-                        # LLM failed - mark as indexed_by_llm = False to prevent re-trying
-                        if entry:
-                            entry['indexed_by_llm'] = False
+                        # LLM failed - mark as indexing_attempted to prevent re-trying
+                        lora_catalog.mark_indexing_attempted(file_hash)
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] ✓ Basic indexing only (LLM failed): {lora_file.name}")
                         print(f"[Autopilot LoRA API]   Error: {error_msg}")
                 else:
-                    # No Civitai data - skip LLM processing but mark as "indexed" to prevent re-trying
-                    if entry:
-                        entry['indexed_by_llm'] = False  # Mark as processed (won't try again)
+                    # No Civitai data - mark as indexing_attempted to prevent re-trying
+                    lora_catalog.mark_indexing_attempted(file_hash)
                     indexed_count += 1
                     print(f"[Autopilot LoRA API] ⊘ Skipped (no Civitai data): {lora_file.name}")
                     print(f"[Autopilot LoRA API]   Basic metadata saved, can be edited manually in catalog")
