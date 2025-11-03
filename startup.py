@@ -14,12 +14,18 @@ def startup_check():
         # Quick check: report catalog status
         lora_folder = lora_catalog.get_lora_directory()
         if lora_folder and lora_folder.exists():
-            lora_files = list(lora_folder.glob("*.safetensors")) + list(lora_folder.glob("*.ckpt"))
+            # Recursively find all LoRA files (matching the scan behavior)
+            lora_files = list(lora_folder.rglob("*.safetensors"))
             
             # Report status
             indexed_count = sum(1 for entry in lora_catalog.catalog.values() if entry.get('indexed_by_llm', False))
             total_count = len(lora_catalog.catalog)
             total_files = len(lora_files)
+            
+            print(f"[Debug] LoRA folder: {lora_folder}")
+            print(f"[Debug] Found {total_files} .safetensors files via rglob")
+            print(f"[Debug] Catalog has {total_count} entries")
+            print(f"[Debug] Indexed by LLM: {indexed_count}")
             
             if indexed_count > 0:
                 print(f"\033[92m⚡ Autopilot LoRA: {indexed_count}/{total_files} LoRA(s) fully indexed\033[0m")

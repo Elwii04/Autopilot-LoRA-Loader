@@ -717,28 +717,6 @@ app.registerExtension({
                 return r;
             };
             
-            // Override onDrawForeground to draw header widget on top
-            const onDrawForeground = nodeType.prototype.onDrawForeground;
-            nodeType.prototype.onDrawForeground = function(ctx) {
-                if (onDrawForeground) {
-                    onDrawForeground.apply(this, arguments);
-                }
-                
-                // Find the header widget and draw it on top
-                const headerWidget = this.widgets?.find(w => w.type === "manual_lora_header");
-                if (headerWidget && headerWidget.last_y !== undefined) {
-                    const hasManualLoras = this.widgets?.some(w => w.type === "manual_lora");
-                    if (hasManualLoras) {
-                        // Re-draw the header widget on top of everything
-                        ctx.save();
-                        const widgetWidth = this.size[0];
-                        const widgetHeight = LiteGraph.NODE_WIDGET_HEIGHT;
-                        headerWidget.draw(ctx, this, widgetWidth, headerWidget.last_y, widgetHeight);
-                        ctx.restore();
-                    }
-                }
-            };
-            
             // Override serialize to convert manual LoRA widgets to string
             const onSerialize = nodeType.prototype.onSerialize;
             nodeType.prototype.onSerialize = function(o) {
