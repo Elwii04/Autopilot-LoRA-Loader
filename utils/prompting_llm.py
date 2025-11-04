@@ -20,7 +20,7 @@ def build_prompting_json_template(include_negative_prompt: bool) -> str:
     """Build the JSON template string shown to the LLM."""
     selected_entry_template = """    {
       "name": "exact_lora_filename.safetensors",
-      "reason": "Brief explanation why this LoRA helps the request",
+      "reason": "Structure your explanation like \"Fit: ... | Usage: ... | Signature traits: ...\" so it is easy to scan why this LoRA helps.",
       "used_triggers": ["trigger_word_1", "trigger_word_2"]
     }"""
     
@@ -39,45 +39,54 @@ DEFAULT_SYSTEM_PROMPT = """You are a creative prompt engineering assistant. For 
 DEFAULT_PROMPT_STYLE_INSTRUCTION = """Enhance the user's idea into a vivid, professional prompt. Keep wording concise but expressive (roughly 60-100 words unless the request implies otherwise). Highlight key subjects, styling cues, atmosphere, and technical details. Maintain clarity so another artist or AI model can follow it without ambiguity."""
 
 
-def build_candidate_list_text(candidates: List[Dict[str, Any]], max_candidates: int = 30) -> str:
+def build_candidate_list_text(
+    candidates: List[Dict[str, Any]],
+    max_candidates: int = 30
+) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Build a text representation of candidate LoRAs for the LLM.
+    Build a text representation plus structured metadata for candidate LoRAs.
     
     Args:
         candidates: List of LoRA catalog entries
         max_candidates: Maximum number to include
         
     Returns:
-        Formatted text for LLM
+        Tuple of (formatted text for the LLM, structured metadata list)
     """
-    lines = ["Available LoRAs (each entry lists what it does and which trigger words to use):"]
+    lines = ["Available LoRAs (concise overview for selection):"]
+    structured: List[Dict[str, Any]] = []
     
     for i, lora in enumerate(candidates[:max_candidates]):
         summary = lora.get('summary') or lora.get('display_name', '')
         description = lora.get('description', '')
-        base_models = lora.get('base_compat', []) or []
-        default_weight = lora.get('default_weight')
         triggers = lora.get('trained_words', []) or []
         tags = lora.get('tags', []) or []
+        display_name = lora.get('display_name', '')
         
-        lines.append(f"{i+1}. {lora['file']}")
-        
+        lines.append(f"{i+1}. File: {lora['file']}")
+        if display_name and display_name != summary:
+            lines.append(f"   Display name: {display_name}")
         if summary:
             lines.append(f"   Summary: {summary}")
         if description:
-            lines.append(f"   Details: {description}")
-        if base_models:
-            lines.append(f"   Base models: {', '.join(base_models)}")
-        if default_weight is not None:
-            lines.append(f"   Suggested strength: {default_weight}")
+            lines.append(f"   Creator notes: {description}")
         if triggers:
             lines.append(f"   Trigger words: {', '.join(triggers[:8])}")
         if tags:
             lines.append(f"   Tags: {', '.join(tags[:6])}")
-        
         lines.append("")
+        
+        structured.append({
+            "file": lora['file'],
+            "display_name": display_name,
+            "summary": summary,
+            "creator_notes": description,
+            "trigger_words": triggers[:8],
+            "tags": tags[:6]
+        })
     
-    return '\n'.join(lines).strip()
+    formatted_text = '\n'.join(lines).strip()
+    return formatted_text, structured
 
 
 def create_prompting_prompt(
@@ -87,7 +96,7 @@ def create_prompting_prompt(
     max_loras: int = 6,
     trigger_position: str = "llm_decides",
     include_negative_prompt: bool = False
-) -> str:
+) -> Tuple[str, Dict[str, Any]]:
     """
     Create the prompting prompt.
     
@@ -100,13 +109,9 @@ def create_prompting_prompt(
         include_negative_prompt: Whether a negative prompt should be generated
         
     Returns:
-        Full prompt for LLM
+        Tuple of (full prompt for LLM, structured metadata for debugging)
     """
-    candidate_text = build_candidate_list_text(candidates)
-    
-    image_note = ""
-    if has_image:
-        image_note = "\nNote: An image is provided. Consider it when selecting LoRAs and generating the prompt."
+    candidate_text, candidate_metadata = build_candidate_list_text(candidates)
     
     json_template = build_prompting_json_template(include_negative_prompt)
     
@@ -117,24 +122,41 @@ def create_prompting_prompt(
     }
     trigger_note = trigger_note_map.get(trigger_position.lower(), trigger_note_map["llm_decides"])
     
-    prompt = f"""User request:
-{base_context}
-{image_note}
+    reference_image_text = "Yes" if has_image else "No"
+    negative_prompt_text = "Yes" if include_negative_prompt else "No"
+    
+    prompt = f"""=== Task Context ===
+User request:
+{base_context.strip() or "[empty prompt provided]"}
 
+Reference image provided: {reference_image_text}
+Negative prompt requested: {negative_prompt_text}
+
+=== Candidate Catalog ===
 {candidate_text}
 
-Additional context:
+=== Constraints ===
 - Maximum LoRAs to return: {max_loras}
 - {trigger_note}
 - Trigger words must match the exact wording listed under each candidate's "Trigger words" line.
-- Use the provided summaries/descriptions to justify each selection.
+- Use the provided summaries and creator notes to justify each selection.
 
-JSON TEMPLATE (copy this structure exactly, replacing placeholders with your content):
+=== JSON Response Template ===
 {json_template}
 
 Return only the completed JSON object (no extra commentary)."""
     
-    return prompt
+    metadata = {
+        "user_request": base_context.strip(),
+        "reference_image_provided": has_image,
+        "negative_prompt_requested": include_negative_prompt,
+        "max_loras": max_loras,
+        "trigger_rule": trigger_note,
+        "candidate_catalog": candidate_metadata,
+        "json_template": json_template
+    }
+    
+    return prompt, metadata
 
 
 def parse_prompting_response(response_text: str) -> Optional[Dict[str, Any]]:
@@ -260,11 +282,16 @@ def prompt_with_llm(
         print("[PromptingLLM] Using provided custom instruction for prompt style")
     
     selection_instruction = build_selection_instruction(max_loras, trigger_position, include_negative_prompt)
-    instruction_block = f"{selection_instruction}\n\nPrompt Writing Style:\n{user_style_instruction}"
+    instruction_block = (
+        "=== Selection Directives ===\n"
+        f"{selection_instruction.strip()}\n\n"
+        "=== Prompt Writing Style ===\n"
+        f"{user_style_instruction.strip()}"
+    )
     
     # Build prompt
     has_image = image is not None
-    prompt_body = create_prompting_prompt(
+    prompt_body, prompt_metadata = create_prompting_prompt(
         base_context,
         candidates,
         has_image=has_image,
@@ -274,6 +301,12 @@ def prompt_with_llm(
     )
     prompt = f"{instruction_block}\n\n{prompt_body}"
     prompt_payload = prompt  # Keep full text sent to the LLM for debugging
+    prompt_debug = {
+        "selection_directives": selection_instruction.strip(),
+        "prompt_style": user_style_instruction.strip(),
+        "task_context": prompt_metadata,
+        "composed_prompt": prompt
+    }
     
     # Generate with LLM
     if has_image:
@@ -324,6 +357,7 @@ def prompt_with_llm(
     
     result['selected_loras'] = validated_loras
     result['raw_prompt'] = prompt_payload
+    result['prompt_metadata'] = prompt_debug
     
     return True, result, ""
 def build_selection_instruction(max_loras: int, trigger_position: str, include_negative_prompt: bool) -> str:

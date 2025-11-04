@@ -2,7 +2,7 @@
 LoRA Selection Logic
 Filters and ranks LoRAs for auto-selection.
 """
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 
 from .utils import rank_candidates_by_relevance
 from .base_model_mapping import base_model_mapper
@@ -140,21 +140,26 @@ def merge_manual_and_auto_loras(
         file = lora['file']
         if file not in seen_files:
             seen_files.add(file)
-            merged.append(lora)
+            entry_copy = dict(lora)
+            entry_copy.setdefault('selection_source', 'manual_input')
+            merged.append(entry_copy)
     
     # Add auto LoRAs
     for lora in auto_loras:
         file = lora['file']
         if file not in seen_files:
             seen_files.add(file)
-            merged.append(lora)
+            entry_copy = dict(lora)
+            entry_copy.setdefault('selection_source', 'auto_llm')
+            merged.append(entry_copy)
     
     return merged
 
 
 def resolve_selected_loras_from_llm(
     llm_selection: List[Dict[str, str]],
-    catalog_entries: List[Dict[str, Any]]
+    catalog_entries: List[Dict[str, Any]],
+    selection_metadata: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     Resolve LLM-selected LoRA names to full catalog entries.
@@ -169,11 +174,33 @@ def resolve_selected_loras_from_llm(
     # Build lookup by filename
     catalog_by_file = {entry['file']: entry for entry in catalog_entries}
     
+    metadata_lookup = {}
+    if selection_metadata:
+        metadata_lookup = {
+            item['name']: item
+            for item in selection_metadata
+            if isinstance(item, dict) and 'name' in item
+        }
+    
     resolved = []
     for selected in llm_selection:
         name = selected['name']
         if name in catalog_by_file:
-            resolved.append(catalog_by_file[name])
+            entry_copy = dict(catalog_by_file[name])
+            meta = metadata_lookup.get(name, {})
+            if meta:
+                reason = meta.get('reason', '')
+                if isinstance(reason, str):
+                    entry_copy['llm_reason'] = reason.strip()
+                used_triggers = meta.get('used_triggers', [])
+                if isinstance(used_triggers, list):
+                    entry_copy['llm_used_triggers'] = [
+                        str(trigger).strip()
+                        for trigger in used_triggers
+                        if isinstance(trigger, str) and trigger.strip()
+                    ]
+            entry_copy.setdefault('selection_source', 'auto_llm')
+            resolved.append(entry_copy)
         else:
             print(f"[LoRASelector] Warning: Could not resolve LoRA: {name}")
     

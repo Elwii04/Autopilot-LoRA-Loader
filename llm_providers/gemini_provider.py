@@ -37,6 +37,7 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_key: str):
         """Initialize Gemini provider."""
         super().__init__(api_key)
+        self._vision_cache: Dict[str, bool] = {}
         
         if not HAS_GEMINI:
             raise ImportError(
@@ -76,10 +77,94 @@ class GeminiProvider(BaseLLMProvider):
             print(f"[Gemini] Error fetching models: {e}")
             return GEMINI_TEXT_MODELS
     
+    def _heuristic_supports_vision(self, model: str) -> bool:
+        """Heuristic check for Gemini vision support when API metadata is unavailable."""
+        if not model:
+            return False
+        
+        model_lower = model.lower()
+        
+        if model_lower in {name.lower() for name in GEMINI_VISION_MODELS}:
+            return True
+        
+        non_vision_models = {
+            "gemini-pro",
+            "gemini-1.0-pro",
+            "gemini-1.0-pro-001",
+            "gemini-1.0-pro-latest",
+        }
+        if model_lower in non_vision_models:
+            return False
+        
+        if not model_lower.startswith("gemini-"):
+            return False
+        
+        if "embedding" in model_lower or "textonly" in model_lower:
+            return False
+        
+        vision_keywords = (
+            "vision",
+            "flash",
+            "pro",
+            "1.5",
+            "2.0",
+            "2.1",
+            "2.2",
+            "2.5",
+            "2.6",
+        )
+        return any(keyword in model_lower for keyword in vision_keywords)
+    
     def supports_vision(self, model: str) -> bool:
-        """Check if model supports vision."""
-        # Most Gemini models support vision
-        return model in GEMINI_VISION_MODELS or 'gemini-1.5' in model or 'gemini-2.0' in model
+        """Check if model supports vision (image inputs)."""
+        if not model:
+            return False
+        
+        cache_key = model.lower()
+        if cache_key in self._vision_cache:
+            return self._vision_cache[cache_key]
+        
+        # First try heuristics to avoid unnecessary API calls
+        heuristic_result = self._heuristic_supports_vision(cache_key)
+        if heuristic_result:
+            self._vision_cache[cache_key] = True
+            return True
+        
+        try:
+            api_model_name = model if model.startswith("models/") else f"models/{model}"
+            model_info = genai.get_model(api_model_name)
+            
+            input_modalities = getattr(model_info, "input_modalities", None)
+            if input_modalities:
+                if any(str(mod).lower() in {"image", "vision", "multimodal"} for mod in input_modalities):
+                    self._vision_cache[cache_key] = True
+                    return True
+            
+            capabilities = getattr(model_info, "capabilities", {})
+            if isinstance(capabilities, dict):
+                # Some versions expose capabilities as { "multimodal": True } etc.
+                for key, value in capabilities.items():
+                    key_lower = str(key).lower()
+                    if key_lower in {"multimodal", "vision"} and bool(value):
+                        self._vision_cache[cache_key] = True
+                        return True
+                    if key_lower == "modalities" and isinstance(value, list):
+                        if any(str(mod).lower() in {"image", "vision", "multimodal"} for mod in value):
+                            self._vision_cache[cache_key] = True
+                            return True
+            
+            supported_methods = getattr(model_info, "supported_generation_methods", [])
+            if supported_methods:
+                for method in supported_methods:
+                    if isinstance(method, str) and "image" in method.lower():
+                        self._vision_cache[cache_key] = True
+                        return True
+            
+        except Exception as exc:
+            print(f"[Gemini] Warning: Could not verify vision support for {model}: {exc}")
+        
+        self._vision_cache[cache_key] = heuristic_result
+        return heuristic_result
     
     def generate_text(
         self,

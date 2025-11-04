@@ -144,7 +144,9 @@ class SmartPowerLoRALoader:
     def __init__(self):
         """Initialize the node."""
         self.indexing_done = False
-        self._llm_prompt_request = ""
+        self._llm_prompt_request = {}
+        self._llm_selection_details = []
+        self._llm_prompt_model = ""
     
     def process(
         self,
@@ -398,6 +400,9 @@ class SmartPowerLoRALoader:
     ) -> List[Dict[str, Any]]:
         """Auto-select LoRAs using LLM."""
         print("\n[Auto-Select] Starting LoRA selection...")
+        self._llm_prompt_request = {}
+        self._llm_selection_details = []
+        self._llm_prompt_model = f"{prompting_provider}: {prompting_model}"
         
         # Parse allowlist
         allowlist = self._parse_lora_list(allowlist_loras)
@@ -415,7 +420,6 @@ class SmartPowerLoRALoader:
         
         if not candidates:
             print("[Auto-Select] No candidates available")
-            self._llm_prompt_request = ""
             return []
         
         # Get API key
@@ -450,36 +454,111 @@ class SmartPowerLoRALoader:
         
         if not success:
             print(f"[Auto-Select] LLM error: {error}")
-            self._llm_prompt_request = ""
+            self._llm_prompt_request = {}
+            self._llm_selection_details = []
             return []
         
         # Store LLM-generated prompt
         self._llm_generated_prompt = result['prompt']
         self._llm_generated_negative = result.get('negative_prompt', '')
-        self._llm_prompt_request = result.get('raw_prompt', '')
+        
+        raw_prompt = result.get('raw_prompt', '')
+        prompt_metadata = result.get('prompt_metadata')
+        if isinstance(prompt_metadata, dict):
+            debug_prompt = dict(prompt_metadata)
+            debug_prompt.setdefault('composed_prompt', raw_prompt)
+        else:
+            debug_prompt = {"composed_prompt": raw_prompt}
+        debug_prompt.setdefault('model', self._llm_prompt_model)
+        self._llm_prompt_request = debug_prompt
+        
+        truncated_selection = []
+        for entry in result.get('selected_loras', [])[:max_loras]:
+            if not isinstance(entry, dict):
+                continue
+            entry_copy = {
+                "name": entry.get('name', ''),
+                "reason": entry.get('reason', ''),
+                "used_triggers": list(entry.get('used_triggers', [])) if isinstance(entry.get('used_triggers'), list) else []
+            }
+            truncated_selection.append(entry_copy)
+        self._llm_selection_details = truncated_selection
         
         # Resolve selected LoRAs
         selected = resolve_selected_loras_from_llm(
-            llm_selection=result['selected_loras'][:max_loras],
-            catalog_entries=candidates
+            llm_selection=truncated_selection,
+            catalog_entries=candidates,
+            selection_metadata=truncated_selection
         )
         
         return selected
     
     def _build_selection_json(self, selected_loras: List[Dict[str, Any]], manual_list: List[str]) -> str:
         """Build JSON string of selected LoRAs for debugging."""
+        prompt_debug = getattr(self, "_llm_prompt_request", {})
+        if isinstance(prompt_debug, str):
+            prompt_debug = {"composed_prompt": prompt_debug}
+        selection_details = getattr(self, "_llm_selection_details", [])
+        llm_model = getattr(self, "_llm_prompt_model", "")
+        
+        selection_lookup = {
+            item['name']: item
+            for item in selection_details
+            if isinstance(item, dict) and item.get('name')
+        }
+        
         output = {
             "manual_loras": manual_list,
             "selected_loras": [],
-            "llm_prompt": getattr(self, "_llm_prompt_request", "")
+            "llm_prompt": prompt_debug,
+            "llm_selection_details": selection_details,
+            "llm_model": llm_model
         }
         
         for lora in selected_loras:
+            file_name = lora.get('file', '')
+            selection_source = lora.get('selection_source', 'auto_llm')
+            is_manual = file_name in manual_list or selection_source == 'manual_input'
+            catalog_triggers = [
+                str(trigger).strip()
+                for trigger in (lora.get('trained_words') or [])
+                if isinstance(trigger, str) and trigger.strip()
+            ]
+            catalog_tags = [
+                str(tag).strip()
+                for tag in (lora.get('tags') or [])
+                if isinstance(tag, str) and tag.strip()
+            ]
+            
+            llm_meta = selection_lookup.get(file_name, {})
+            used_triggers = lora.get('llm_used_triggers') or llm_meta.get('used_triggers', []) or []
+            used_triggers = [
+                str(trigger).strip()
+                for trigger in used_triggers
+                if isinstance(trigger, str) and trigger.strip()
+            ]
+            
+            reason = lora.get('llm_reason') or llm_meta.get('reason', '')
+            if isinstance(reason, str):
+                reason = reason.strip()
+            else:
+                reason = ""
+            
+            if is_manual and not reason:
+                reason = "Manually selected by user."
+            elif not is_manual and not reason:
+                reason = "LLM selection returned without a detailed reason."
+            
             output["selected_loras"].append({
-                "file": lora['file'],
+                "file": file_name,
                 "display_name": lora.get('display_name', ''),
-                "weight": lora.get('default_weight', 1.0),
-                "triggers": lora.get('trained_words', [])
+                "selection_source": "manual_input" if is_manual else "auto_llm",
+                "selection_reason": reason,
+                "llm_used_triggers": used_triggers,
+                "catalog_summary": lora.get('summary') or lora.get('description', ''),
+                "catalog_triggers": catalog_triggers,
+                "catalog_tags": catalog_tags,
+                "default_weight": lora.get('default_weight', 1.0)
             })
         
         return json.dumps(output, indent=2)
