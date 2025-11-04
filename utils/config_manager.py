@@ -3,6 +3,7 @@ Configuration Manager for SmartPowerLoRALoader
 Handles loading API keys from .env file and configuration management.
 """
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 from typing import Optional, Dict, Any
@@ -16,6 +17,9 @@ class ConfigManager:
         self.root_dir = Path(__file__).parent.parent
         self.env_path = self.root_dir / '.env'
         self.env_example_path = self.root_dir / '.env.example'
+        self.data_dir = self.root_dir / 'data'
+        self.settings_path = self.data_dir / 'settings.json'
+        self.settings: Dict[str, Any] = {}
         
         # Create .env from .env.example if it doesn't exist
         if not self.env_path.exists():
@@ -46,6 +50,35 @@ GEMINI_API_KEY=your_gemini_api_key_here
         else:
             print(f"[SmartPowerLoRALoader] Warning: .env file not found at {self.env_path}")
             print(f"[SmartPowerLoRALoader] Copy .env.example to .env and add your API keys")
+        
+        # Load persisted settings (non-secret config)
+        self._load_settings()
+    
+    def _load_settings(self):
+        """Load persistent settings from data/settings.json if available."""
+        if not self.settings_path.exists():
+            self.settings = {}
+            return
+        
+        try:
+            with open(self.settings_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    self.settings = data
+                else:
+                    self.settings = {}
+        except Exception as e:
+            print(f"[SmartPowerLoRALoader] Error loading settings.json: {e}")
+            self.settings = {}
+    
+    def _save_settings(self):
+        """Persist current settings to disk."""
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.settings_path, 'w', encoding='utf-8') as f:
+                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[SmartPowerLoRALoader] Error saving settings.json: {e}")
     
     def get_groq_api_key(self) -> Optional[str]:
         """
@@ -80,6 +113,50 @@ GEMINI_API_KEY=your_gemini_api_key_here
     def gemini_api_key(self) -> Optional[str]:
         """Property for backward compatibility."""
         return self.get_gemini_api_key()
+    
+    def get_api_key(self, provider: str) -> Optional[str]:
+        """Generic accessor for provider API keys."""
+        provider = (provider or '').lower()
+        if provider == 'groq':
+            return self.get_groq_api_key()
+        if provider == 'gemini':
+            return self.get_gemini_api_key()
+        return None
+    
+    def get(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
+        """
+        Retrieve a configuration value.
+        
+        Precedence:
+        1. Environment variable (uppercased key)
+        2. Persisted settings.json value
+        3. Provided default
+        """
+        if not key:
+            return default
+        
+        env_key = key.upper()
+        env_value = os.getenv(env_key)
+        if env_value not in (None, ''):
+            return env_value
+        
+        return self.settings.get(key, default)
+    
+    def set(self, key: str, value: Any, save: bool = True):
+        """
+        Persist a configuration value to settings.json.
+        
+        Args:
+            key: Setting name
+            value: Value to store (JSON-serializable)
+            save: Whether to immediately save to disk
+        """
+        if not key:
+            return
+        
+        self.settings[key] = value
+        if save:
+            self._save_settings()
     
     def validate_api_keys(self, provider: str) -> tuple[bool, str]:
         """

@@ -233,35 +233,47 @@ def build_civitai_summary_text(civitai_data: Dict[str, Any]) -> str:
         return ""
     
     parts = []
+    model_info = civitai_data.get('model')
+    if not isinstance(model_info, dict):
+        model_info = {}
     
     # Model name
-    if 'model' in civitai_data and 'name' in civitai_data['model']:
-        parts.append(f"Model: {civitai_data['model']['name']}")
+    model_name = model_info.get('name')
+    if isinstance(model_name, str) and model_name.strip():
+        parts.append(f"Model: {model_name.strip()}")
     
     # Version name
-    if 'name' in civitai_data:
-        parts.append(f"Version: {civitai_data['name']}")
+    version_name = civitai_data.get('name')
+    if isinstance(version_name, str) and version_name.strip():
+        parts.append(f"Version: {version_name.strip()}")
     
     # Base model
-    if 'baseModel' in civitai_data:
-        parts.append(f"Base Model: {civitai_data['baseModel']}")
+    base_model = civitai_data.get('baseModel')
+    if isinstance(base_model, str) and base_model.strip():
+        parts.append(f"Base Model: {base_model.strip()}")
     
     # Trained words
-    if 'trainedWords' in civitai_data and civitai_data['trainedWords']:
-        words = ', '.join(civitai_data['trainedWords'])
-        parts.append(f"Trained Words: {words}")
+    trained_words = civitai_data.get('trainedWords')
+    if isinstance(trained_words, list) and trained_words:
+        words = ', '.join([w for w in trained_words if isinstance(w, str) and w.strip()])
+        if words:
+            parts.append(f"Trained Words: {words}")
     
     # Description
-    if 'description' in civitai_data:
-        desc = civitai_data['description'][:500]  # Limit length
-        parts.append(f"Description: {desc}")
-    elif 'model' in civitai_data and 'description' in civitai_data['model']:
-        desc = civitai_data['model']['description'][:500]
-        parts.append(f"Description: {desc}")
+    description = civitai_data.get('description')
+    if isinstance(description, str) and description.strip():
+        parts.append(f"Description: {description.strip()[:500]}")
+    else:
+        model_desc = model_info.get('description')
+        if isinstance(model_desc, str) and model_desc.strip():
+            parts.append(f"Description: {model_desc.strip()[:500]}")
     
     # Tags
-    if 'model' in civitai_data and 'tags' in civitai_data['model']:
-        tags = ', '.join(civitai_data['model']['tags'][:10])
-        parts.append(f"Tags: {tags}")
+    model_tags = model_info.get('tags')
+    if isinstance(model_tags, list) and model_tags:
+        tag_list = [t for t in model_tags if isinstance(t, str) and t.strip()]
+        if tag_list:
+            tags = ', '.join(tag_list[:10])
+            parts.append(f"Tags: {tags}")
     
     return '\n'.join(parts)

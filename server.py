@@ -3,12 +3,14 @@ Server API endpoints for Autopilot LoRA Loader.
 Provides catalog information to the web UI.
 """
 
-import os
 import json
 from pathlib import Path
 from aiohttp import web
 import server
 from server import PromptServer
+from .utils.config_manager import config
+from .utils.lora_catalog import lora_catalog
+from .utils.indexing_llm import index_with_llm
 
 # Get the directory where this file is located
 NODE_DIR = Path(__file__).parent
@@ -163,14 +165,43 @@ async def index_loras_batch(request):
     """Index multiple unindexed LoRAs with a max limit."""
     try:
         data = await request.json()
-        max_loras = data.get('max_loras', 10)
+        max_loras_raw = data.get('max_loras', 10)
+        try:
+            max_loras = int(max_loras_raw)
+        except (TypeError, ValueError):
+            max_loras = 10
+        max_loras = max(1, min(max_loras, 500))
+        
+        requested_model = data.get('indexing_model')
+        if isinstance(requested_model, str) and requested_model.strip():
+            indexing_model_value = requested_model.strip()
+            # Persist the most recent choice to keep UI and API aligned
+            config.set('indexing_model', indexing_model_value)
+        else:
+            stored_value = config.get('indexing_model', 'groq: llama-3.1-8b-instant')
+            indexing_model_value = str(stored_value) if stored_value else 'groq: llama-3.1-8b-instant'
+        
+        provider_name = 'groq'
+        model_name = 'llama-3.1-8b-instant'
+        if isinstance(indexing_model_value, str):
+            parts = indexing_model_value.split(':', 1)
+            if len(parts) == 2:
+                maybe_provider = parts[0].strip().lower()
+                maybe_model = parts[1].strip()
+                if maybe_provider:
+                    provider_name = maybe_provider
+                if maybe_model:
+                    model_name = maybe_model
+            else:
+                maybe_model = indexing_model_value.strip()
+                if maybe_model:
+                    model_name = maybe_model
+        provider_name = provider_name.lower()
+        api_key = config.get_api_key(provider_name)
+        api_key_warning_logged = False
         
         print(f"[Autopilot LoRA API] Starting batch indexing (max: {max_loras})")
-        
-        # Import required modules
-        from pathlib import Path
-        from .utils.lora_catalog import lora_catalog
-        from .utils.indexing_llm import index_with_llm
+        print(f"[Autopilot LoRA API] Using indexing model: {provider_name}:{model_name}")
         
         # Get all LoRA files from folder_paths (support multiple directories)
         import folder_paths
@@ -291,21 +322,12 @@ async def index_loras_batch(request):
                     # Has Civitai data - process with LLM
                     print(f"[Autopilot LoRA API] Processing with LLM: {lora_file.name}")
                     
-                    # Get config for LLM settings
-                    from .utils.config_manager import config
-                    
-                    # Get indexing model info
-                    indexing_model = config.get('indexing_model', 'groq: llama-3.1-8b-instant')
-                    provider_name, model_name = indexing_model.split(': ', 1) if ': ' in indexing_model else ('groq', 'llama-3.1-8b-instant')
-                    
-                    # Get API key
-                    api_key = config.get_api_key(provider_name)
-                    
                     if not api_key:
-                        print(f"[Autopilot LoRA API] No API key for {provider_name}, marking as indexed without LLM")
-                        # Mark as indexed_by_llm = False to prevent re-trying
-                        if entry:
-                            entry['indexed_by_llm'] = False
+                        if not api_key_warning_logged:
+                            print(f"[Autopilot LoRA API] No API key for provider '{provider_name}', recording basic metadata only")
+                            api_key_warning_logged = True
+                        entry['indexed_by_llm'] = False
+                        entry['indexing_attempted'] = True
                         indexed_count += 1
                         continue
                     
@@ -313,8 +335,7 @@ async def index_loras_batch(request):
                     known_models = lora_catalog.get_known_base_families()
                     
                     # Call indexing LLM
-                    from .utils.indexing_llm import index_with_llm as index_llm_func
-                    success, extracted, error_msg = index_llm_func(
+                    success, extracted, error_msg = index_with_llm(
                         entry['civitai_text'],
                         provider_name,
                         model_name,

@@ -69,6 +69,72 @@ async function getLoraInfo(loraName) {
     return null;
 }
 
+function getIndexingModelFromNode(node) {
+    if (!node) {
+        return null;
+    }
+
+    const resolveWidgetValue = (widget) => {
+        if (!widget) {
+            return null;
+        }
+
+        const value = widget.value;
+        if (typeof value === "string" && value.trim()) {
+            return value.trim();
+        }
+
+        if (typeof value === "number" && Array.isArray(widget.options?.values)) {
+            const candidate = widget.options.values[value];
+            if (typeof candidate === "string" && candidate.trim()) {
+                return candidate.trim();
+            }
+        }
+
+        if (Array.isArray(widget.options?.values)) {
+            const maybeIndex = widget.options.values.indexOf(value);
+            if (maybeIndex >= 0) {
+                const candidate = widget.options.values[maybeIndex];
+                if (typeof candidate === "string" && candidate.trim()) {
+                    return candidate.trim();
+                }
+            }
+            const first = widget.options.values[0];
+            if (typeof first === "string" && first.trim()) {
+                return first.trim();
+            }
+        }
+
+        if (typeof widget.options?.default === "string" && widget.options.default.trim()) {
+            return widget.options.default.trim();
+        }
+
+        return null;
+    };
+
+    if (typeof node.autopilotIndexingModel === "string" && node.autopilotIndexingModel.trim()) {
+        return node.autopilotIndexingModel.trim();
+    }
+
+    if (Array.isArray(node.widgets)) {
+        const widget = node.widgets.find((w) => w && w.name === "indexing_model");
+        const resolved = resolveWidgetValue(widget);
+        if (resolved) {
+            node.autopilotIndexingModel = resolved;
+            return resolved;
+        }
+    }
+
+    const propValue = node?.properties?.indexing_model;
+    if (typeof propValue === "string" && propValue.trim()) {
+        const trimmed = propValue.trim();
+        node.autopilotIndexingModel = trimmed;
+        return trimmed;
+    }
+
+    return null;
+}
+
 // Show LoRA chooser (like rgthree's showLoraChooser using LiteGraph.ContextMenu)
 async function showLoraChooser(event, callback, currentValue = null) {
     await getAvailableLoras();
@@ -1668,6 +1734,18 @@ async function showLoraCatalogDialog(node) {
         maxLabel.style.cssText = 'color: #aaa; font-size: 13px;';
         indexingControls.appendChild(maxLabel);
 
+        const modelHint = document.createElement('div');
+        modelHint.style.cssText = 'margin-top: 8px; color: #888; font-size: 12px;';
+        const refreshModelHint = () => {
+            const currentModel = getIndexingModelFromNode(node);
+            if (currentModel) {
+                modelHint.textContent = `Using LLM: ${currentModel}`;
+            } else {
+                modelHint.textContent = 'Using LLM: default (groq: llama-3.1-8b-instant)';
+            }
+        };
+        refreshModelHint();
+
         const indexBtn = document.createElement('button');
         indexBtn.textContent = '🔄 Start Indexing';
         indexBtn.style.cssText = `
@@ -1684,16 +1762,26 @@ async function showLoraCatalogDialog(node) {
         indexBtn.onmouseleave = () => indexBtn.style.background = '#3a7a5a';
         indexBtn.onclick = async () => {
             const maxLoras = parseInt(maxLorasInput.value) || 10;
+            const indexingModel = getIndexingModelFromNode(node);
+            if (indexingModel) {
+                node.autopilotIndexingModel = indexingModel;
+            }
+            refreshModelHint();
             indexBtn.disabled = true;
             indexBtn.textContent = '⏳ Indexing...';
             indexBtn.style.background = '#666';
             indexBtn.style.cursor = 'wait';
 
             try {
+                const payload = { max_loras: maxLoras };
+                if (indexingModel) {
+                    payload.indexing_model = indexingModel;
+                }
+
                 const response = await api.fetchApi('/autopilot_lora/index', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ max_loras: maxLoras })
+                    body: JSON.stringify(payload)
                 });
 
                 const result = await response.json();
@@ -1719,12 +1807,15 @@ async function showLoraCatalogDialog(node) {
                 indexBtn.textContent = '🔄 Start Indexing';
                 indexBtn.style.background = '#3a7a5a';
                 indexBtn.style.cursor = 'pointer';
+                refreshModelHint();
             }
         };
         indexingControls.appendChild(indexBtn);
 
         indexingSection.appendChild(indexingControls);
+        indexingSection.appendChild(modelHint);
         content.appendChild(indexingSection);
+        dialog.addEventListener('pointerover', refreshModelHint);
 
         // Close button
         const closeBtn = document.createElement('button');
