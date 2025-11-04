@@ -21,7 +21,7 @@ INDEXING_SCHEMA_FIELDS = ['summary', 'trainedWords', 'tags', 'recommendedStrengt
 
 # JSON template example for indexing
 INDEXING_JSON_TEMPLATE = """{
-  "summary": "Two to three sentences (≈250-300 chars) describing what this LoRA enables, highlighting subject/style cues",
+  "summary": "One to three sentences (≈250-300 chars) describing what this LoRA does/adds/enhances, highlighting subject/style cues",
   "trainedWords": ["exact_trigger_word_1", "exact_trigger_word_2", "exact_trigger_word_3"],
   "tags": ["style_tag", "category_tag", "theme_tag", "feature_tag", "quality_tag"],
   "recommendedStrength": 1.0
@@ -31,7 +31,7 @@ INDEXING_JSON_TEMPLATE = """{
 INDEXING_SYSTEM_PROMPT = """You are a metadata extraction specialist. Your task is to extract structured information from LoRA model descriptions and their official gallery samples. Another downstream prompting assistant will rely on your JSON to decide which LoRA to use for a user's image request, so accuracy and descriptive detail are critical.
 
 Extract the following information:
-1. summary: Provide 2-3 tightly written sentences (up to ~300 characters total) that explain exactly what the LoRA does, improves or tries to add, the visual style or subject focus, and any standout use cases or also limitations. Dont include technical details like Base model etc.
+1. summary: Provide 1-3 tightly written sentences (up to ~300 characters total) that explain exactly what the LoRA does, improves or tries to add, the visual style or subject focus, and any standout use cases or also limitations. Also include prompting tips given by the creator. Dont include technical details like Base model, sampler, steps, aspect ratio, resolution etc.
 2. trainedWords: An array of exact trigger words or sentences needed to activate this LoRA (from the text, not made up, may also have none)
 3. tags: An array of 2-5 descriptive tags/keywords for this LoRA
 4. recommendedStrength: The suggested LoRA strength value as a decimal number between 0.2 and 2.0. If no recommendation is given, default to 1.0. Never exceed this range.
