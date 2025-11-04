@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 
-from .utils import compute_file_hash, normalize_lora_name
+from .utils import compute_file_hash
 from .safetensors_utils import parse_safetensors_file
 from .civitai_utils import fetch_civitai_by_hash, extract_civitai_metadata, build_civitai_summary_text
 from .base_model_mapping import base_model_mapper
@@ -172,6 +172,7 @@ class LoRACatalog:
             # Update availability and path in case file moved
             existing_entry['available'] = True
             existing_entry['full_path'] = str(file_path)
+            existing_entry['display_name'] = existing_entry.get('file', file_path.name)
             return file_hash
         
         # Initialize entry
@@ -179,7 +180,7 @@ class LoRACatalog:
             'file_hash': file_hash,  # Add file_hash to the entry itself for easy access
             'file': str(file_path.name),
             'full_path': str(file_path),
-            'display_name': normalize_lora_name(file_path.name),
+            'display_name': file_path.name,
             'sha256': file_hash,
             'available': True,  # Mark as available by default
             'summary': '',
@@ -224,9 +225,9 @@ class LoRACatalog:
             # Extract metadata
             civitai_meta = extract_civitai_metadata(civitai_data)
             
-            # Merge display name
+            # Store Civitai display name separately for reference
             if civitai_meta.get('display_name'):
-                entry['display_name'] = civitai_meta['display_name']
+                entry['civitai_display_name'] = civitai_meta['display_name']
             
             # Merge trained words (prioritize Civitai)
             if civitai_meta.get('trained_words'):
