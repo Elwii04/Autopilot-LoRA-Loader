@@ -31,20 +31,20 @@ INDEXING_JSON_TEMPLATE = """{
 INDEXING_SYSTEM_PROMPT = """You are a metadata extraction specialist. Your task is to extract structured information from LoRA model descriptions and their official gallery samples. Another downstream prompting assistant will rely on your JSON to decide which LoRA to use for a user's image request, so accuracy and descriptive detail are critical.
 
 Extract the following information:
-1. summary: Provide 2-3 tightly written sentences (up to ~300 characters total) that explain exactly what the LoRA does, the visual style or subject focus, and any standout use cases or also limitations.
-2. trainedWords: An array of exact trigger words or sentences needed to activate this LoRA (from the text, not made up)
-3. tags: An array of 5-10 descriptive tags/keywords for this LoRA
+1. summary: Provide 2-3 tightly written sentences (up to ~300 characters total) that explain exactly what the LoRA does, improves or tries to add, the visual style or subject focus, and any standout use cases or also limitations. Dont include technical details like Base model etc.
+2. trainedWords: An array of exact trigger words or sentences needed to activate this LoRA (from the text, not made up, may also have none)
+3. tags: An array of 2-5 descriptive tags/keywords for this LoRA
 4. recommendedStrength: The suggested LoRA strength value as a decimal number between 0.2 and 2.0. If no recommendation is given, default to 1.0. Never exceed this range.
 
 IMPORTANT RULES:
 - Output ONLY valid JSON matching this exact format
-- Pay close attention to the provided gallery images and their prompts to understand the visual style or subject matter
+- Pay attention to the provided gallery images and their prompts to understand the visual style or subject matter
 - trainedWords must be EXACT words from the description, not invented
 - If no trigger words are mentioned, use an empty array []
-- Summary must contain 2-3 sentences (≈300 characters) that clearly communicate purpose, style, and ideal usage
+- Summary must contain 2-3 sentences (≈300 characters) that clearly communicate purpose, style, and ideal usage but no technical details.
 - Keep the tone factual and actionable so another model can decide whether to apply this LoRA
 - Tags should be lowercase, single words or short phrases
-- recommendedStrength must be a numeric value (float) between 0.2 and 2.0 inclusive
+- recommendedStrength must be a numeric value (float) and roughly between 0.2 and 2.0 inclusive
 - Do NOT add any explanation, just the JSON object
 
 REQUIRED JSON OUTPUT FORMAT:
