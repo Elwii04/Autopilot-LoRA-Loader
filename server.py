@@ -351,7 +351,8 @@ async def index_loras_batch(request):
                             extracted['summary'],
                             extracted['trainedWords'],
                             extracted['tags'],
-                            entry.get('base_compat', ['Other'])
+                            entry.get('base_compat', ['Other']),
+                            extracted.get('recommendedStrength')
                         )
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] [OK] Indexed with LLM: {lora_file.name}")

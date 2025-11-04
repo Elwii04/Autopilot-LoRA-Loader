@@ -348,7 +348,8 @@ class SmartPowerLoRALoader:
                         summary=extracted['summary'],
                         trained_words=extracted['trainedWords'],
                         tags=extracted['tags'],
-                        base_compat=base_compat
+                        base_compat=base_compat,
+                        recommended_strength=extracted.get('recommendedStrength')
                     )
                     print(f"[Indexing] ✅ Successfully indexed: {entry.get('display_name', file_path.name)}")
                 else:

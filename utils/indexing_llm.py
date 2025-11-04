@@ -12,14 +12,15 @@ from .base_model_mapping import base_model_mapper
 
 
 # JSON schema for indexing output
-INDEXING_SCHEMA_FIELDS = ['summary', 'trainedWords', 'tags']
+INDEXING_SCHEMA_FIELDS = ['summary', 'trainedWords', 'tags', 'recommendedStrength']
 
 
 # JSON template example for indexing
 INDEXING_JSON_TEMPLATE = """{
   "summary": "A single concise sentence describing what this LoRA does (max 100 chars)",
   "trainedWords": ["exact_trigger_word_1", "exact_trigger_word_2", "exact_trigger_word_3"],
-  "tags": ["style_tag", "category_tag", "theme_tag", "feature_tag", "quality_tag"]
+  "tags": ["style_tag", "category_tag", "theme_tag", "feature_tag", "quality_tag"],
+  "recommendedStrength": 1.0
 }"""
 
 
@@ -29,6 +30,7 @@ Extract the following information:
 1. summary: A single concise sentence (max 100 characters) describing what the LoRA does, be very specific.
 2. trainedWords: An array of exact trigger words or sentences needed to activate this LoRA (from the text, not made up)
 3. tags: An array of 5-10 descriptive tags/keywords for this LoRA
+4. recommendedStrength: The suggested LoRA strength value as a decimal number between 0.2 and 2.0. If no recommendation is given, default to 1.0. Never exceed this range.
 
 IMPORTANT RULES:
 - Output ONLY valid JSON matching this exact format
@@ -36,13 +38,15 @@ IMPORTANT RULES:
 - If no trigger words are mentioned, use an empty array []
 - Summary must be ONE sentence, under 100 characters
 - Tags should be lowercase, single words or short phrases
+- recommendedStrength must be a numeric value (float) between 0.2 and 2.0 inclusive
 - Do NOT add any explanation, just the JSON object
 
 REQUIRED JSON OUTPUT FORMAT:
 {
   "summary": "One sentence description here",
   "trainedWords": ["trigger1", "trigger2"],
-  "tags": ["tag1", "tag2", "tag3"]
+  "tags": ["tag1", "tag2", "tag3"],
+  "recommendedStrength": 1.0
 }"""
 
 
@@ -102,12 +106,21 @@ def parse_indexing_response(response_text: str) -> Optional[Dict[str, Any]]:
         return None
     if not isinstance(data['tags'], list):
         return None
+    # recommendedStrength can be int/float/str convertible
+    recommended_raw = data['recommendedStrength']
+    try:
+        recommended_value = float(str(recommended_raw).strip())
+    except Exception:
+        recommended_value = 1.0
+    # Clamp to allowed range
+    recommended_value = max(0.2, min(2.0, recommended_value))
     
     # Clean and normalize
     result = {
         'summary': data['summary'].strip()[:200],  # Max 200 chars
         'trainedWords': [w.strip() for w in data['trainedWords'] if isinstance(w, str) and w.strip()],
-        'tags': [t.strip().lower() for t in data['tags'] if isinstance(t, str) and t.strip()][:15]  # Max 15 tags
+        'tags': [t.strip().lower() for t in data['tags'] if isinstance(t, str) and t.strip()][:15],  # Max 15 tags
+        'recommendedStrength': recommended_value
     }
     
     return result

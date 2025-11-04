@@ -279,7 +279,8 @@ class LoRACatalog:
         summary: str,
         trained_words: List[str],
         tags: List[str],
-        base_compat: List[str]
+        base_compat: List[str],
+        recommended_strength: Optional[float] = None
     ):
         """
         Mark a LoRA as indexed by LLM and update its metadata.
@@ -313,6 +314,11 @@ class LoRACatalog:
         # Update base compat (if provided and not Other)
         if base_compat and base_compat != ['Other']:
             entry['base_compat'] = base_compat
+        
+        # Update recommended strength if provided
+        if recommended_strength is not None:
+            clamped_strength = max(0.2, min(2.0, float(recommended_strength)))
+            entry['default_weight'] = round(clamped_strength, 4)
         
         print(f"[LoRACatalog] Marked as LLM indexed: {entry['display_name']}")
     
