@@ -26,8 +26,8 @@ INDEXING_JSON_TEMPLATE = """{
 INDEXING_SYSTEM_PROMPT = """You are a metadata extraction specialist. Your task is to extract structured information from LoRA model descriptions.
 
 Extract the following information:
-1. summary: A single concise sentence (max 100 characters) describing what the LoRA does
-2. trainedWords: An array of exact trigger words needed to activate this LoRA (from the text, not made up)
+1. summary: A single concise sentence (max 100 characters) describing what the LoRA does, be very specific.
+2. trainedWords: An array of exact trigger words or sentences needed to activate this LoRA (from the text, not made up)
 3. tags: An array of 5-10 descriptive tags/keywords for this LoRA
 
 IMPORTANT RULES:

@@ -144,6 +144,7 @@ class SmartPowerLoRALoader:
     def __init__(self):
         """Initialize the node."""
         self.indexing_done = False
+        self._llm_prompt_request = ""
     
     def process(
         self,
@@ -217,7 +218,9 @@ class SmartPowerLoRALoader:
             temperature=temperature,
             max_loras=max_loras,
             system_prompt=system_prompt,
-            custom_instruction=custom_instruction
+            custom_instruction=custom_instruction,
+            trigger_position=trigger_position,
+            include_negative_prompt=enable_negative_prompt
         )
         
         print(f"Auto-selected LoRAs: {len(auto_selected_entries)}")
@@ -386,7 +389,9 @@ class SmartPowerLoRALoader:
         temperature: float,
         max_loras: int,
         system_prompt: str = "",
-        custom_instruction: str = ""
+        custom_instruction: str = "",
+        trigger_position: str = "llm_decides",
+        include_negative_prompt: bool = False
     ) -> List[Dict[str, Any]]:
         """Auto-select LoRAs using LLM."""
         print("\n[Auto-Select] Starting LoRA selection...")
@@ -407,6 +412,7 @@ class SmartPowerLoRALoader:
         
         if not candidates:
             print("[Auto-Select] No candidates available")
+            self._llm_prompt_request = ""
             return []
         
         # Get API key
@@ -433,16 +439,21 @@ class SmartPowerLoRALoader:
             temperature=temperature,
             max_tokens=1024,
             system_prompt=system_prompt,
-            custom_instruction=custom_instruction
+            custom_instruction=custom_instruction,
+            max_loras=max_loras,
+            trigger_position=trigger_position,
+            include_negative_prompt=include_negative_prompt
         )
         
         if not success:
             print(f"[Auto-Select] LLM error: {error}")
+            self._llm_prompt_request = ""
             return []
         
         # Store LLM-generated prompt
         self._llm_generated_prompt = result['prompt']
         self._llm_generated_negative = result.get('negative_prompt', '')
+        self._llm_prompt_request = result.get('raw_prompt', '')
         
         # Resolve selected LoRAs
         selected = resolve_selected_loras_from_llm(
@@ -456,7 +467,8 @@ class SmartPowerLoRALoader:
         """Build JSON string of selected LoRAs for debugging."""
         output = {
             "manual_loras": manual_list,
-            "selected_loras": []
+            "selected_loras": [],
+            "llm_prompt": getattr(self, "_llm_prompt_request", "")
         }
         
         for lora in selected_loras:

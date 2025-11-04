@@ -356,11 +356,11 @@ async def index_loras_batch(request):
                         indexed_count += 1
                         print(f"[Autopilot LoRA API] [OK] Indexed with LLM: {lora_file.name}")
                     else:
-                        # LLM failed - mark as indexing_attempted to prevent re-trying
-                        lora_catalog.mark_indexing_attempted(file_hash)
-                        indexed_count += 1
-                        print(f"[Autopilot LoRA API] [OK] Basic indexing only (LLM failed): {lora_file.name}")
+                        failed_count += 1
+                        print(f"[Autopilot LoRA API] [ERR] LLM failed to produce usable JSON: {lora_file.name}")
                         print(f"[Autopilot LoRA API]   Error: {error_msg}")
+                        # Do not mark indexing_attempted so we can retry later
+                        continue
                 else:
                     # No Civitai data - mark as indexing_attempted to prevent re-trying
                     lora_catalog.mark_indexing_attempted(file_hash)
