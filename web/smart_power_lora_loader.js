@@ -6,6 +6,69 @@ const NODE_NAME = "SmartPowerLoRALoader";
 
 // Store available LoRAs globally
 let availableLoras = [];
+let baseModelOptionsCache = null;
+
+function getStaticBaseModelFallback() {
+    return [
+        'Aura Flow', 'Chroma', 'CogVideoX', 'Flux .1 S', 'Flux .1 D',
+        'Flux .1 Krea', 'Flux .1 Kontext', 'HiDream', 'Hunyuan 1',
+        'Hunyuan Video', 'Illustrious', 'Kolors', 'LTXV', 'Lumina',
+        'Mochi', 'NoobAI', 'Other', 'PixArt α', 'PixArt Σ', 'Pony',
+        'Pony V7', 'Qwen', 'Qwen-Image-Edit', 'SD 1.4', 'SD 1.5', 'SD 1.5 LCM',
+        'SD 1.5 Hyper', 'SD 2.0', 'SD 2.1', 'SDXL 1.0', 'SDXL Lightning',
+        'SDXL Hyper', 'Wan Video 1.3B t2v', 'Wan Video 1.4B t2v',
+        'Wan Video 1.4B i2v 480p', 'Wan Video 1.4B i2v 720p',
+        'Wan Video 2.2 T12V-5B', 'Wan Video 2.2 I2V-A14B',
+        'Wan Video 2.2 T2V-A14B', 'Wan Video 2.5 T2V', 'Wan Video 2.5 I2V',
+        'Unknown'
+    ];
+}
+
+async function fetchBaseModelOptions() {
+    if (Array.isArray(baseModelOptionsCache) && baseModelOptionsCache.length > 0) {
+        return baseModelOptionsCache;
+    }
+    
+    try {
+        const response = await api.fetchApi('/autopilot_lora/base_models');
+        if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data.models) && data.models.length > 0) {
+                baseModelOptionsCache = data.models;
+                return baseModelOptionsCache;
+            }
+        }
+    } catch (error) {
+        console.warn('[Autopilot LoRA] Failed to fetch base model list, using fallback.', error);
+    }
+    
+    baseModelOptionsCache = getStaticBaseModelFallback();
+    return baseModelOptionsCache;
+}
+
+async function populateBaseModelSelect(selectElement, selectedModels = []) {
+    const models = await fetchBaseModelOptions();
+    const normalizedSelected = Array.isArray(selectedModels) ? selectedModels : [selectedModels];
+    
+    // Ensure any existing selections are available even if not in base list
+    const augmentedModels = [...models];
+    normalizedSelected.forEach(model => {
+        if (model && !augmentedModels.includes(model)) {
+            augmentedModels.push(model);
+        }
+    });
+    
+    selectElement.innerHTML = '';
+    augmentedModels.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        if (normalizedSelected.includes(model)) {
+            option.selected = true;
+        }
+        selectElement.appendChild(option);
+    });
+}
 
 // Fetch LoRAs from ComfyUI (gets ALL LoRAs from folder_paths, not just indexed ones)
 async function getAvailableLoras() {
@@ -964,7 +1027,7 @@ app.registerExtension({
 });
 
 // Show LoRA info dialog (properly centered with editing capability)
-function showLoraInfoDialog(loraName, catalogInfo) {
+async function showLoraInfoDialog(loraName, catalogInfo) {
     const dialog = document.createElement('div');
     dialog.style.cssText = `
         position: fixed;
@@ -1134,40 +1197,8 @@ function showLoraInfoDialog(loraName, catalogInfo) {
         const baseModelSelect = document.createElement('select');
         baseModelSelect.multiple = true;
         baseModelSelect.size = 8;
-        baseModelSelect.style.cssText = `
-            width: 100%;
-            margin-bottom: 15px;
-            padding: 8px;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            color: #fff;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-            display: none;
-        `;
-        // All available base models from screenshot
-        const baseModels = [
-            'Aura Flow', 'Chroma', 'CogVideoX', 'Flux .1 S', 'Flux .1 D',
-            'Flux .1 Krea', 'Flux .1 Kontext', 'HiDream', 'Hunyuan 1',
-            'Hunyuan Video', 'Illustrious', 'Kolors', 'LTXV', 'Lumina',
-            'Mochi', 'NoobAI', 'Other', 'PixArt α', 'PixArt Σ', 'Pony',
-            'Pony V7', 'Qwen', 'SD 1.4', 'SD 1.5', 'SD 1.5 LCM',
-            'SD 1.5 Hyper', 'SD 2.0', 'SD 2.1', 'SDXL 1.0', 'SDXL Lightning',
-            'SDXL Hyper', 'Wan Video 1.3B t2v', 'Wan Video 1.4B t2v',
-            'Wan Video 1.4B i2v 480p', 'Wan Video 1.4B i2v 720p',
-            'Wan Video 2.2 T12V-5B', 'Wan Video 2.2 I2V-A14B',
-            'Wan Video 2.2 T2V-A14B', 'Wan Video 2.5 T2V', 'Wan Video 2.5 I2V'
-        ];
-        baseModels.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model;
-            option.textContent = model;
-            if (catalogInfo.base_compat && catalogInfo.base_compat.includes(model)) {
-                option.selected = true;
-            }
-            baseModelSelect.appendChild(option);
-        });
+        baseModelSelect.style.cssText = "width: 100%;\n            margin-bottom: 15px;\n            padding: 8px;\n            background: #2a2a2a;\n            border: 1px solid #444;\n            color: #fff;\n            border-radius: 4px;\n            font-size: 14px;\n            box-sizing: border-box;\n            display: none;";
+        await populateBaseModelSelect(baseModelSelect, catalogInfo.base_compat || ['Other']);
         content.appendChild(baseModelSelect);
 
         // Weight

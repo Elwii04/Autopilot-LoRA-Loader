@@ -11,6 +11,7 @@ from server import PromptServer
 from .utils.config_manager import config
 from .utils.lora_catalog import lora_catalog
 from .utils.indexing_llm import index_with_llm
+from .utils.base_model_mapping import base_model_mapper
 
 # Get the directory where this file is located
 NODE_DIR = Path(__file__).parent
@@ -84,6 +85,27 @@ async def get_lora_info(request):
         
     except Exception as e:
         print(f"[Autopilot LoRA API] Error in /info endpoint: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/autopilot_lora/base_models")
+async def get_base_models(request):
+    """Return the list of canonical base model families."""
+    try:
+        models = base_model_mapper.get_all_models()
+        # Ensure we include Unknown as manual fallback
+        if 'Unknown' not in models:
+            models = models + ['Unknown']
+        # Deduplicate while preserving order
+        seen = set()
+        ordered = []
+        for model in models:
+            if model not in seen:
+                seen.add(model)
+                ordered.append(model)
+        return web.json_response({"models": ordered})
+    except Exception as e:
+        print(f"[Autopilot LoRA API] Error in /base_models endpoint: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 
