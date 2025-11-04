@@ -409,9 +409,6 @@ class LoRACatalog:
     
     def get_known_base_families(self) -> List[str]:
         """Get list of base model families present in the catalog."""
-        # Reload to ensure we catch changes written by other processes (e.g., indexing API)
-        self.load_catalog()
-        
         families = base_model_mapper.get_families_in_catalog(list(self.catalog.values()))
         
         if not families:
