@@ -46,6 +46,8 @@ class LoRACatalog:
         else:
             print(f"[LoRACatalog] No existing catalog found, will create new one")
             self.catalog = {}
+            # Ensure catalog file exists so downstream code never fails on missing file
+            self.save_catalog()
     
     def save_catalog(self):
         """Save catalog to JSON file."""

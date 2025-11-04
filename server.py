@@ -172,22 +172,65 @@ async def index_loras_batch(request):
         from .utils.lora_catalog import lora_catalog
         from .utils.indexing_llm import index_with_llm
         
-        # Get all LoRA files from folder_paths
+        # Get all LoRA files from folder_paths (support multiple directories)
         import folder_paths
-        lora_folder = folder_paths.get_folder_paths("loras")[0]
-        lora_path = Path(lora_folder)
+        lora_dirs = folder_paths.get_folder_paths("loras") or []
+        lora_paths = []
+        for dir_path in lora_dirs:
+            try:
+                path_obj = Path(dir_path)
+            except Exception:
+                continue
+            if path_obj.exists():
+                lora_paths.append(path_obj)
         
-        if not lora_path.exists():
+        if not lora_paths:
             return web.json_response({
                 "error": "LoRA folder not found",
-                "path": str(lora_path)
+                "paths": lora_dirs
             }, status=404)
         
-        # Find all safetensors files
-        all_lora_files = list(lora_path.glob("**/*.safetensors"))
+        # Find all safetensors files (deduplicate across directories)
+        all_lora_files = []
+        seen_paths = set()
+        for lora_path in lora_paths:
+            for file_path in lora_path.glob("**/*.safetensors"):
+                try:
+                    resolved = str(file_path.resolve()).lower()
+                except Exception:
+                    resolved = str(file_path).lower()
+                if resolved in seen_paths:
+                    continue
+                seen_paths.add(resolved)
+                all_lora_files.append(file_path)
+        
+        print(f"[Autopilot LoRA API] Discovered {len(all_lora_files)} LoRA files across {len(lora_paths)} folder(s)")
         
         # Reload the global catalog from disk to get latest state (including enabled/disabled changes)
         lora_catalog.load_catalog()
+        
+        def normalize_path(path_value):
+            if not path_value:
+                return None
+            try:
+                return str(Path(path_value).resolve()).lower()
+            except Exception:
+                try:
+                    return str(Path(path_value)).lower()
+                except Exception:
+                    return str(path_value).lower()
+        
+        # Build quick lookup tables to match catalog entries by path or fallback to filename
+        catalog_by_path = {}
+        catalog_by_name = {}
+        for entry in lora_catalog.catalog.values():
+            normalized_entry_path = normalize_path(entry.get('full_path') or entry.get('file_path'))
+            if normalized_entry_path:
+                catalog_by_path[normalized_entry_path] = entry
+            else:
+                file_name = (entry.get('file') or '').lower()
+                if file_name:
+                    catalog_by_name.setdefault(file_name, []).append(entry)
         
         # Find unindexed LoRAs that need to be processed
         # Include LoRAs that:
@@ -198,14 +241,18 @@ async def index_loras_batch(request):
         # 2. Have already been attempted for indexing (indexing_attempted = True)
         unindexed = []
         for lora_file in all_lora_files:
-            # Check if already in catalog
+            normalized_file_path = normalize_path(str(lora_file))
             catalog_entry = None
-            for entry in lora_catalog.catalog.values():
-                if (entry.get('file') == lora_file.name or 
-                    str(lora_file) == entry.get('file_path') or
-                    str(lora_file) == entry.get('full_path')):
-                    catalog_entry = entry
-                    break
+            if normalized_file_path:
+                catalog_entry = catalog_by_path.get(normalized_file_path)
+            
+            if catalog_entry is None:
+                name_key = lora_file.name.lower()
+                name_matches = catalog_by_name.get(name_key, [])
+                if name_matches:
+                    catalog_entry = name_matches[0]
+                    if normalized_file_path:
+                        catalog_by_path.setdefault(normalized_file_path, catalog_entry)
             
             # Skip if disabled
             if catalog_entry and not catalog_entry.get('enabled', True):
@@ -215,9 +262,9 @@ async def index_loras_batch(request):
             # 1. Not in catalog at all (new LoRA)
             # 2. In catalog but indexing_attempted is False or missing (not yet tried)
             if catalog_entry is None:
-                unindexed.append(lora_file)
+                unindexed.append((lora_file, None))
             elif not catalog_entry.get('indexing_attempted', False):
-                unindexed.append(lora_file)
+                unindexed.append((lora_file, catalog_entry))
         
         print(f"[Autopilot LoRA API] Found {len(unindexed)} unindexed LoRAs")
         
@@ -226,10 +273,11 @@ async def index_loras_batch(request):
         
         indexed_count = 0
         failed_count = 0
-        skipped_count = len(unindexed) - len(to_index)
+        skipped_due_to_limit = max(0, len(unindexed) - len(to_index))
+        skipped_no_data = 0
         
         # Index each LoRA
-        for lora_file in to_index:
+        for lora_file, _ in to_index:
             try:
                 print(f"[Autopilot LoRA API] Indexing: {lora_file.name}")
                 
@@ -271,7 +319,8 @@ async def index_loras_batch(request):
                         provider_name,
                         model_name,
                         api_key,
-                        known_models
+                        known_models,
+                        entry.get('file', lora_file.name)
                     )
                     
                     if success and extracted:
@@ -284,23 +333,23 @@ async def index_loras_batch(request):
                             entry.get('base_compat', ['Other'])
                         )
                         indexed_count += 1
-                        print(f"[Autopilot LoRA API] ✓ Indexed with LLM: {lora_file.name}")
+                        print(f"[Autopilot LoRA API] [OK] Indexed with LLM: {lora_file.name}")
                     else:
                         # LLM failed - mark as indexing_attempted to prevent re-trying
                         lora_catalog.mark_indexing_attempted(file_hash)
                         indexed_count += 1
-                        print(f"[Autopilot LoRA API] ✓ Basic indexing only (LLM failed): {lora_file.name}")
+                        print(f"[Autopilot LoRA API] [OK] Basic indexing only (LLM failed): {lora_file.name}")
                         print(f"[Autopilot LoRA API]   Error: {error_msg}")
                 else:
                     # No Civitai data - mark as indexing_attempted to prevent re-trying
                     lora_catalog.mark_indexing_attempted(file_hash)
-                    indexed_count += 1
-                    print(f"[Autopilot LoRA API] ⊘ Skipped (no Civitai data): {lora_file.name}")
+                    skipped_no_data += 1
+                    print(f"[Autopilot LoRA API] [SKIP] Skipped (no Civitai data): {lora_file.name}")
                     print(f"[Autopilot LoRA API]   Basic metadata saved, can be edited manually in catalog")
                     
             except Exception as e:
                 failed_count += 1
-                print(f"[Autopilot LoRA API] ✗ Error indexing {lora_file.name}: {e}")
+                print(f"[Autopilot LoRA API] [ERR] Error indexing {lora_file.name}: {e}")
                 import traceback
                 traceback.print_exc()
         
@@ -311,7 +360,9 @@ async def index_loras_batch(request):
             "success": True,
             "indexed_count": indexed_count,
             "failed_count": failed_count,
-            "skipped_count": skipped_count,
+            "skipped_count": skipped_due_to_limit + skipped_no_data,
+            "skipped_due_to_limit": skipped_due_to_limit,
+            "skipped_no_data": skipped_no_data,
             "total_unindexed": len(unindexed)
         })
         

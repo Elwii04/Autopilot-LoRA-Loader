@@ -485,8 +485,8 @@ class ManualLoraHeaderWidget {
         const hasManualLoras = node.widgets?.some(w => w.type === "manual_lora");
         if (!hasManualLoras) return;
 
-        // Move slightly down to avoid overlap with widgets above
-        posY += 2;
+        // Move slightly up so it sits clear of the first manual LoRA widget
+        posY = Math.max(posY - widgetHeight * 0.35, 0);
         
         const margin = 10;
         const innerMargin = margin * 0.33;
