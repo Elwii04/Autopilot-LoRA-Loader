@@ -341,7 +341,9 @@ async def index_loras_batch(request):
                         model_name,
                         api_key,
                         known_models,
-                        entry.get('file', lora_file.name)
+                        entry.get('file', lora_file.name),
+                        image_entries=entry.get('images', []),
+                        cache_key=file_hash
                     )
                     
                     if success and extracted:

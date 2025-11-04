@@ -321,7 +321,9 @@ class SmartPowerLoRALoader:
                     model_name=indexing_model,
                     api_key=api_key,
                     known_families=known_families,
-                    filename=file_path.name
+                    filename=file_path.name,
+                    image_entries=entry.get('images', []),
+                    cache_key=file_hash
                 )
                 
                 if success and extracted:

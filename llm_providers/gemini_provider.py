@@ -4,7 +4,7 @@ Implements Google Gemini API integration using google-generativeai library.
 """
 import json
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from PIL import Image
 
 from . import BaseLLMProvider
@@ -165,7 +165,7 @@ class GeminiProvider(BaseLLMProvider):
     def generate_with_image(
         self,
         prompt: str,
-        image: Image.Image,
+        image: Union[Image.Image, List[Image.Image]],
         model: str,
         system_message: Optional[str] = None,
         temperature: float = 0.7,
@@ -178,7 +178,7 @@ class GeminiProvider(BaseLLMProvider):
         
         Args:
             prompt: User prompt
-            image: PIL Image
+            image: PIL Image or list of PIL Images
             model: Model name
             system_message: Optional system message
             temperature: Sampling temperature
@@ -192,6 +192,8 @@ class GeminiProvider(BaseLLMProvider):
             return False, "", f"Model {model} does not support vision"
         
         try:
+            image_list = image if isinstance(image, list) else [image]
+            
             # Build generation config
             generation_config = genai.GenerationConfig(
                 temperature=temperature,
@@ -210,7 +212,8 @@ class GeminiProvider(BaseLLMProvider):
             for attempt in range(max_retries):
                 try:
                     # Build content with image
-                    content = [prompt, image]
+                    content: List[Any] = [prompt]
+                    content.extend(image_list)
                     
                     # Generate content
                     response = model_instance.generate_content(content)

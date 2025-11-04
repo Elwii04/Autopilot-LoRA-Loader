@@ -255,6 +255,12 @@ class LoRACatalog:
             entry['civitai_data'] = civitai_data
             entry['civitai_text'] = build_civitai_summary_text(civitai_data)
             
+            # Usage tips and suggested strength
+            if civitai_meta.get('usage_tips'):
+                entry['usage_tips'] = civitai_meta['usage_tips']
+            if civitai_meta.get('suggested_strength') is not None and not entry.get('default_weight'):
+                entry['default_weight'] = civitai_meta['suggested_strength']
+            
             # Store URLs
             if civitai_meta.get('civitai_url'):
                 entry['source']['url'] = civitai_meta['civitai_url']

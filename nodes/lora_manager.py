@@ -217,7 +217,9 @@ class LoRAManager:
                     model_name=model_name,
                     api_key=api_key,
                     known_families=known_families,
-                    filename=file_path.name
+                    filename=file_path.name,
+                    image_entries=entry.get('images', []),
+                    cache_key=file_hash
                 )
                 
                 if success and extracted:
@@ -343,7 +345,9 @@ class LoRAManager:
             model_name=model_name,
             api_key=api_key,
             known_families=known_families,
-            filename=lora_name
+            filename=lora_name,
+            image_entries=entry.get('images', []),
+            cache_key=file_hash
         )
         
         if not success or not extracted:

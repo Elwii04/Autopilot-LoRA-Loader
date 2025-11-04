@@ -59,7 +59,7 @@ class BaseLLMProvider(ABC):
     def generate_with_image(
         self,
         prompt: str,
-        image: Image.Image,
+        image: Image.Image | List[Image.Image],
         model: str,
         system_message: Optional[str] = None,
         temperature: float = 0.7,
@@ -71,7 +71,7 @@ class BaseLLMProvider(ABC):
         
         Args:
             prompt: User prompt
-            image: PIL Image
+            image: PIL Image or list of PIL Images
             model: Model name to use (must support vision)
             system_message: Optional system message
             temperature: Sampling temperature

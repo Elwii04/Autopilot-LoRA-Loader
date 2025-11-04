@@ -196,6 +196,11 @@ UI design patterns inspired by **rgthree's Power LoRA Loader**, adapted for:
 
 ## [Unreleased]
 
+### Added
+- Civitai ingest now fetches full model metadata, including sanitized descriptions, tags, usage tips, and suggested strengths inferred from gallery resources.
+- Up to five creator gallery images are cached locally with their prompts so the indexing LLM can reason about the LoRA's visual style.
+- Indexing pipeline automatically routes through a vision-capable LLM when gallery assets are available and feeds it the prompt context.
+
 ### Planned Features
 - Character LoRA auto-detection heuristics
 - Custom base model family definitions via UI

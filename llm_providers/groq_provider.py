@@ -4,7 +4,7 @@ Implements Groq API integration using OpenAI-compatible endpoints.
 """
 import json
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 import requests
 from PIL import Image
 
@@ -159,7 +159,7 @@ class GroqProvider(BaseLLMProvider):
     def generate_with_image(
         self,
         prompt: str,
-        image: Image.Image,
+        image: Union[Image.Image, List[Image.Image]],
         model: str,
         system_message: Optional[str] = None,
         temperature: float = 0.7,
@@ -172,7 +172,7 @@ class GroqProvider(BaseLLMProvider):
         
         Args:
             prompt: User prompt
-            image: PIL Image
+            image: PIL Image or list of PIL Images
             model: Vision model name
             system_message: Optional system message
             temperature: Sampling temperature
@@ -187,25 +187,27 @@ class GroqProvider(BaseLLMProvider):
         
         url = f"{GROQ_API_BASE}/chat/completions"
         
-        # Encode image to base64
-        base64_image = encode_image_to_base64(image, format='JPEG')
-        image_url = f"data:image/jpeg;base64,{base64_image}"
+        # Normalize to list
+        image_list = image if isinstance(image, list) else [image]
         
         # Build messages with image
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
         
-        # User message with image
+        # User message with images
+        content_blocks: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for img in image_list:
+            base64_image = encode_image_to_base64(img, format='JPEG')
+            image_url = f"data:image/jpeg;base64,{base64_image}"
+            content_blocks.append({
+                "type": "image_url",
+                "image_url": {"url": image_url}
+            })
+        
         messages.append({
             "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_url}
-                }
-            ]
+            "content": content_blocks
         })
         
         # Build request payload
