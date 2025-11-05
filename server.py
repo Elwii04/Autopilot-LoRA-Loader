@@ -5,6 +5,7 @@ Provides catalog information to the web UI.
 
 import json
 from pathlib import Path
+from datetime import datetime
 from aiohttp import web
 import server
 from server import PromptServer
@@ -168,6 +169,30 @@ async def update_lora_info(request):
         for field in allowed_fields:
             if field in data:
                 entry[field] = data[field]
+
+        # Mark manual metadata state
+        def has_manual_metadata(candidate: dict) -> bool:
+            summary = (candidate.get('summary') or '').strip()
+            trained = candidate.get('trained_words') or []
+            tags = candidate.get('tags') or []
+            base = candidate.get('base_compat') or []
+            if summary:
+                return True
+            if any(isinstance(word, str) and word.strip() for word in trained):
+                return True
+            if any(isinstance(tag, str) and tag.strip() for tag in tags):
+                return True
+            if any(
+                isinstance(model, str) and model.strip() and model.strip().lower() != 'unknown'
+                for model in base
+            ):
+                return True
+            return False
+
+        entry['manually_indexed'] = has_manual_metadata(entry)
+        if entry['manually_indexed']:
+            entry['indexing_attempted'] = True
+            entry['indexed_at'] = entry.get('indexed_at') or datetime.utcnow().isoformat()
         
         # Save the updated catalog
         if save_catalog(catalog):

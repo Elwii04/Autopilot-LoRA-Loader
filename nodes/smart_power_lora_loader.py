@@ -3,7 +3,7 @@ SmartPowerLoRALoader Node
 Main ComfyUI custom node that auto-selects LoRAs and generates prompts using LLMs.
 """
 import json
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional, Set
 import sys
 import os
 from pathlib import Path
@@ -131,7 +131,11 @@ class SmartPowerLoRALoader:
                     "tooltip": "Where to place trigger words in the prompt. 'llm_decides' (recommended): AI integrates them naturally. 'start': All triggers at beginning. 'end': All triggers at end."
                 }),
             }),
-            "hidden": {},
+            "hidden": {
+                "manual_loras": ("STRING", {
+                    "default": "",
+                }),
+            },
         }
     
     RETURN_TYPES = ("MODEL", "CLIP", "STRING", "STRING", "STRING")
@@ -164,6 +168,7 @@ class SmartPowerLoRALoader:
         temperature: float = 0.85,
         max_loras: int = 6,
         trigger_position: str = "llm_decides",
+        manual_loras: str = "",
         **kwargs  # Capture dynamic lora_* inputs from JavaScript
     ) -> Tuple[Any, Any, str, str, str]:
         """
@@ -187,22 +192,89 @@ class SmartPowerLoRALoader:
             self.indexing_done = True
         
         # Step 2: Parse manual LoRAs from dynamic kwargs (lora_1, lora_2, etc.)
-        manual_lora_entries = []
+        manual_lora_entries: List[Dict[str, Any]] = []
+        manual_lora_files: Set[str] = set()
+
+        def add_manual_entry(file_name: str, strength_value: Optional[float] = None, strength_clip_value: Optional[float] = None):
+            """Helper to add or update a manual LoRA entry."""
+            if not file_name:
+                return
+
+            normalized_name = str(file_name).strip()
+            if not normalized_name:
+                return
+
+            # Update existing entry if already added
+            if normalized_name in manual_lora_files:
+                if strength_value is not None or strength_clip_value is not None:
+                    for entry in manual_lora_entries:
+                        entry_file = entry.get('file')
+                        if entry_file and entry_file.strip() == normalized_name:
+                            if strength_value is not None:
+                                try:
+                                    entry['manual_strength'] = float(strength_value)
+                                except (TypeError, ValueError):
+                                    entry['manual_strength'] = 1.0
+                            if strength_clip_value is not None:
+                                try:
+                                    entry['manual_strength_clip'] = float(strength_clip_value)
+                                except (TypeError, ValueError):
+                                    entry['manual_strength_clip'] = entry.get('manual_strength', 1.0)
+                            break
+                return
+
+            entry = lora_catalog.get_entry_by_name(normalized_name)
+            if not entry:
+                print(f"[SmartPowerLoRALoader] Warning: Manual LoRA not found in catalog: {normalized_name}")
+                return
+
+            entry_copy = dict(entry)
+            entry_file = entry_copy.get('file') or normalized_name
+            entry_copy['file'] = entry_file
+
+            if strength_value is not None:
+                try:
+                    entry_copy['manual_strength'] = float(strength_value)
+                except (TypeError, ValueError):
+                    entry_copy['manual_strength'] = entry_copy.get('manual_strength', entry_copy.get('default_weight', 1.0))
+
+            if strength_clip_value is not None:
+                try:
+                    entry_copy['manual_strength_clip'] = float(strength_clip_value)
+                except (TypeError, ValueError):
+                    entry_copy['manual_strength_clip'] = entry_copy.get('manual_strength', entry_copy.get('default_weight', 1.0))
+
+            manual_lora_entries.append(entry_copy)
+            manual_lora_files.add(entry_file)
+
         for key, value in kwargs.items():
             key_upper = key.upper()
             if key_upper.startswith('LORA_') and isinstance(value, dict):
                 if value.get('on') and value.get('lora'):
                     lora_file = value['lora']
-                    entry = lora_catalog.get_entry_by_name(lora_file)
-                    if entry:
-                        # Store strength for later application
-                        entry['manual_strength'] = value.get('strength', 1.0)
-                        entry['manual_strength_clip'] = value.get('strengthTwo', value.get('strength', 1.0))
-                        manual_lora_entries.append(entry)
-                    else:
-                        print(f"⚠️ Manual LoRA not found in catalog: {lora_file}")
-        
-        print(f"Manual LoRAs from dynamic inputs: {len(manual_lora_entries)}")
+                    add_manual_entry(
+                        lora_file,
+                        strength_value=value.get('strength', 1.0),
+                        strength_clip_value=value.get('strengthTwo', value.get('strength', 1.0))
+                    )
+
+        dynamic_manual_count = len(manual_lora_files)
+
+        # Fallback: also respect the hidden manual_loras string (legacy/serialization)
+        manual_from_string = []
+        if isinstance(manual_loras, str) and manual_loras.strip():
+            manual_from_string = [
+                token.strip()
+                for token in manual_loras.split(',')
+                if token and token.strip() and token.strip().lower() != "none"
+            ]
+            for token in manual_from_string:
+                add_manual_entry(token)
+
+        print(f"Manual LoRAs from dynamic inputs: {dynamic_manual_count}")
+        added_from_string = len(manual_lora_files) - dynamic_manual_count
+        if added_from_string > 0:
+            print(f"Manual LoRAs from hidden field: {added_from_string}")
         
         # Step 3: Auto-select LoRAs (always enabled now)
         auto_selected_entries = []
@@ -478,7 +550,6 @@ class SmartPowerLoRALoader:
                 continue
             entry_copy = {
                 "name": entry.get('name', ''),
-                "reason": entry.get('reason', ''),
                 "used_triggers": list(entry.get('used_triggers', [])) if isinstance(entry.get('used_triggers'), list) else []
             }
             truncated_selection.append(entry_copy)
@@ -537,23 +608,11 @@ class SmartPowerLoRALoader:
                 for trigger in used_triggers
                 if isinstance(trigger, str) and trigger.strip()
             ]
-            
-            reason = lora.get('llm_reason') or llm_meta.get('reason', '')
-            if isinstance(reason, str):
-                reason = reason.strip()
-            else:
-                reason = ""
-            
-            if is_manual and not reason:
-                reason = "Manually selected by user."
-            elif not is_manual and not reason:
-                reason = "LLM selection returned without a detailed reason."
-            
+
             output["selected_loras"].append({
                 "file": file_name,
                 "display_name": lora.get('display_name', ''),
                 "selection_source": "manual_input" if is_manual else "auto_llm",
-                "selection_reason": reason,
                 "llm_used_triggers": used_triggers,
                 "catalog_summary": lora.get('summary') or lora.get('description', ''),
                 "catalog_triggers": catalog_triggers,

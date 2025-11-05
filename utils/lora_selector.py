@@ -189,9 +189,6 @@ def resolve_selected_loras_from_llm(
             entry_copy = dict(catalog_by_file[name])
             meta = metadata_lookup.get(name, {})
             if meta:
-                reason = meta.get('reason', '')
-                if isinstance(reason, str):
-                    entry_copy['llm_reason'] = reason.strip()
                 used_triggers = meta.get('used_triggers', [])
                 if isinstance(used_triggers, list):
                     entry_copy['llm_used_triggers'] = [

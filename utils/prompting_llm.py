@@ -20,7 +20,6 @@ def build_prompting_json_template(include_negative_prompt: bool) -> str:
     """Build the JSON template string shown to the LLM."""
     selected_entry_template = """    {
       "name": "exact_lora_filename.safetensors",
-      "reason": "Structure your explanation like \"Fit: ... | Usage: ... | Signature traits: ...\" so it is easy to scan why this LoRA helps.",
       "used_triggers": ["trigger_word_1", "trigger_word_2"]
     }"""
     
@@ -208,7 +207,6 @@ def parse_prompting_response(response_text: str) -> Optional[Dict[str, Any]]:
         
         entry = {
             'name': lora['name'].strip(),
-            'reason': lora.get('reason', '').strip(),
             'used_triggers': []
         }
         
@@ -385,5 +383,5 @@ Trigger Placement Requirement:
 
 Prompt Output Requirement:
 - {negative_guidance}
-- The JSON you return must match the template shown later exactly: include the `selected_loras` array, and for each LoRA provide `name`, `reason`, and `used_triggers` (array of trigger words).
+- The JSON you return must match the template shown later exactly: include the `selected_loras` array, and for each LoRA provide `name` and `used_triggers` (array of trigger words).
 - Ensure `used_triggers` only contains trigger words that belong to that specific LoRA."""

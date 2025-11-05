@@ -308,6 +308,7 @@ class LoRACatalog:
         # Update with LLM data
         entry['summary'] = summary
         entry['indexed_by_llm'] = True
+        entry['manually_indexed'] = False
         entry['indexing_attempted'] = True
         
         # Merge trained words (keep existing + add new)
@@ -348,6 +349,38 @@ class LoRACatalog:
     def get_entry(self, file_hash: str) -> Optional[Dict[str, Any]]:
         """Get a catalog entry by hash."""
         return self.catalog.get(file_hash)
+    
+    def get_entry_by_name(self, file_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a catalog entry by filename. Returns a copy so callers can modify safely.
+        Provides a minimal fallback entry when the file hasn't been indexed yet.
+        """
+        if not file_name:
+            return None
+        
+        normalized = file_name.lower()
+        for entry in self.catalog.values():
+            if entry.get('file', '').lower() == normalized:
+                return dict(entry)
+        
+        # Fallback: generate a minimal placeholder so manual selections still work
+        try:
+            display_name = Path(file_name).stem.replace('_', ' ')
+        except Exception:
+            display_name = file_name
+        
+        return {
+            'file': file_name,
+            'display_name': display_name,
+            'summary': '',
+            'trained_words': [],
+            'tags': [],
+            'base_compat': ['Unknown'],
+            'default_weight': 1.0,
+            'available': True,
+            'indexed_by_llm': False,
+            'manually_indexed': False
+        }
     
     def get_all_entries(self) -> List[Dict[str, Any]]:
         """Get all catalog entries as a list."""
