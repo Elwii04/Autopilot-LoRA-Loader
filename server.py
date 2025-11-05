@@ -183,16 +183,25 @@ async def update_lora_info(request):
             if any(isinstance(tag, str) and tag.strip() for tag in tags):
                 return True
             if any(
-                isinstance(model, str) and model.strip() and model.strip().lower() != 'unknown'
-                for model in base
+                isinstance(model, str)
+                and (model := model.strip())
+                and model.lower() not in {'unknown', 'other'}
             ):
                 return True
             return False
 
-        entry['manually_indexed'] = has_manual_metadata(entry)
-        if entry['manually_indexed']:
-            entry['indexing_attempted'] = True
-            entry['indexed_at'] = entry.get('indexed_at') or datetime.utcnow().isoformat()
+        metadata_fields = {'summary', 'trained_words', 'tags', 'base_compat', 'default_weight', 'display_name'}
+        metadata_updated = any(field in data for field in metadata_fields)
+        previous_manual_flag = entry.get('manually_indexed', False)
+
+        if metadata_updated:
+            entry['manually_indexed'] = has_manual_metadata(entry)
+            entry['indexing_source'] = 'manual' if entry['manually_indexed'] else entry.get('indexing_source', '')
+            if entry['manually_indexed']:
+                entry['indexing_attempted'] = True
+                entry['indexed_at'] = entry.get('indexed_at') or datetime.utcnow().isoformat()
+        else:
+            entry['manually_indexed'] = previous_manual_flag
         
         # Save the updated catalog
         if save_catalog(catalog):
