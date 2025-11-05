@@ -196,12 +196,13 @@ async def update_lora_info(request):
 
         if metadata_updated:
             entry['manually_indexed'] = has_manual_metadata(entry)
-            entry['indexing_source'] = 'manual' if entry['manually_indexed'] else entry.get('indexing_source', '')
             if entry['manually_indexed']:
                 entry['indexing_attempted'] = True
                 entry['indexed_at'] = entry.get('indexed_at') or datetime.utcnow().isoformat()
         else:
             entry['manually_indexed'] = previous_manual_flag
+
+        entry['indexing_source'] = 'manual' if entry['manually_indexed'] else ''
         
         # Save the updated catalog
         if save_catalog(catalog):
