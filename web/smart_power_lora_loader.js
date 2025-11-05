@@ -1497,31 +1497,25 @@ async function showLoraCatalogDialog(node) {
             ? values.map(value => typeof value === "string" ? value.trim() : "").filter(Boolean)
             : [];
 
+        const isTruthyFlag = (value) => value === true || value === "true" || value === 1 || value === "1";
+
         const computeIndexedState = (entry) => {
             if (!entry) {
                 return false;
             }
-            if (entry.indexed) {
+            if (isTruthyFlag(entry.indexed)) {
                 return true;
             }
-            if (entry.indexed_by_llm) {
+            if (isTruthyFlag(entry.indexed_by_llm) || isTruthyFlag(entry.indexedByLlm)) {
                 return true;
             }
-            if (entry.manually_indexed || entry.indexed_manually) {
+            if (isTruthyFlag(entry.manually_indexed) || isTruthyFlag(entry.indexed_manually)) {
                 return true;
             }
-            const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
-            if (summary) {
+            if (entry.indexing_source === "manual") {
                 return true;
             }
-            if (normalizeStringList(entry.trained_words).length) {
-                return true;
-            }
-            if (normalizeStringList(entry.tags).length) {
-                return true;
-            }
-            const baseCompat = normalizeStringList(entry.base_compat);
-            if (baseCompat.some(model => model.toLowerCase() !== "unknown")) {
+            if (entry.source && entry.source.kind === "manual") {
                 return true;
             }
             return false;
