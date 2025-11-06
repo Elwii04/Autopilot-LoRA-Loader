@@ -46,9 +46,18 @@ def apply_loras_to_model_clip(
     for lora_entry in loras_to_apply:
         lora_name = lora_entry['file']
         
-        # Check for manual strength first, then default weight
-        weight_model = lora_entry.get('manual_strength', lora_entry.get('default_weight', 1.0))
-        weight_clip = lora_entry.get('manual_strength_clip', weight_model)
+        # Determine weights with preference: manual overrides -> auto scaled -> catalog default
+        weight_model = lora_entry.get('manual_strength')
+        if not isinstance(weight_model, (int, float)):
+            weight_model = lora_entry.get('auto_strength')
+        if not isinstance(weight_model, (int, float)):
+            weight_model = lora_entry.get('default_weight', 1.0)
+
+        weight_clip = lora_entry.get('manual_strength_clip')
+        if not isinstance(weight_clip, (int, float)):
+            weight_clip = lora_entry.get('auto_strength_clip')
+        if not isinstance(weight_clip, (int, float)):
+            weight_clip = weight_model
         
         # Ensure weights are valid
         if not isinstance(weight_model, (int, float)):

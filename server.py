@@ -93,17 +93,56 @@ async def get_lora_info(request):
 async def get_base_models(request):
     """Return the list of canonical base model families."""
     try:
-        models = base_model_mapper.get_all_models()
-        # Ensure we include Unknown as manual fallback
-        if 'Unknown' not in models:
-            models = models + ['Unknown']
-        # Deduplicate while preserving order
-        seen = set()
+        canonical_models = base_model_mapper.get_all_models()
+        dynamic_models = set()
+
+        try:
+            catalog_entries = lora_catalog.get_all_entries()
+        except Exception as catalog_error:
+            catalog_entries = []
+            print(f"[Autopilot LoRA API] Warning: Could not load catalog for base model list: {catalog_error}")
+
+        for entry in catalog_entries:
+            base_compat = entry.get('base_compat', [])
+            if isinstance(base_compat, str):
+                base_compat = [base_compat]
+            if not isinstance(base_compat, list):
+                continue
+
+            for model in base_compat:
+                if not model:
+                    continue
+                name = str(model).strip()
+                if name:
+                    dynamic_models.add(name)
+
+        # Merge canonical models with any dynamic catalog models (case-insensitive deduping)
+        seen_lower = set()
         ordered = []
-        for model in models:
-            if model not in seen:
-                seen.add(model)
+
+        for model in canonical_models:
+            lower = model.lower()
+            if lower not in seen_lower:
                 ordered.append(model)
+                seen_lower.add(lower)
+
+        for model in sorted(dynamic_models, key=lambda m: m.lower()):
+            lower = model.lower()
+            if lower not in seen_lower:
+                ordered.append(model)
+                seen_lower.add(lower)
+
+        # Always include 'Unknown' at the end as fallback
+        unknown_lower = 'unknown'
+        if unknown_lower in seen_lower:
+            for idx, value in enumerate(ordered):
+                if value.lower() == unknown_lower:
+                    unknown_value = ordered.pop(idx)
+                    ordered.append(unknown_value)
+                    break
+        else:
+            ordered.append('Unknown')
+
         return web.json_response({"models": ordered})
     except Exception as e:
         print(f"[Autopilot LoRA API] Error in /base_models endpoint: {e}")

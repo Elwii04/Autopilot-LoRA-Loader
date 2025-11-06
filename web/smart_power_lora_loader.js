@@ -348,10 +348,6 @@ function getIndexingModelFromNode(node) {
         return null;
     };
 
-    if (typeof node.autopilotIndexingModel === "string" && node.autopilotIndexingModel.trim()) {
-        return node.autopilotIndexingModel.trim();
-    }
-
     if (Array.isArray(node.widgets)) {
         const widget = node.widgets.find((w) => w && w.name === "indexing_model");
         const resolved = resolveWidgetValue(widget);
@@ -359,6 +355,10 @@ function getIndexingModelFromNode(node) {
             node.autopilotIndexingModel = resolved;
             return resolved;
         }
+    }
+
+    if (typeof node.autopilotIndexingModel === "string" && node.autopilotIndexingModel.trim()) {
+        return node.autopilotIndexingModel.trim();
     }
 
     const propValue = node?.properties?.indexing_model;

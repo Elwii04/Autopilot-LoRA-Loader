@@ -561,8 +561,63 @@ class SmartPowerLoRALoader:
             catalog_entries=candidates,
             selection_metadata=truncated_selection
         )
-        
+
+        self._apply_llm_weight_scaling(selected)
+
         return selected
+
+    @staticmethod
+    def _calculate_weight_scale(selected_count: int) -> float:
+        """Compute scaling factor for auto-selected LoRAs based on count."""
+        if selected_count <= 0:
+            return 1.0
+
+        preset_scales = {
+            1: 1.0,
+            2: 0.7,
+            3: 0.55,
+            4: 0.4,
+            5: 0.3,
+            6: 0.25,
+        }
+
+        if selected_count in preset_scales:
+            return preset_scales[selected_count]
+
+        baseline = preset_scales[6]
+        extra = selected_count - 6
+        decay_rate = 0.85
+        scaled = baseline * (decay_rate ** extra)
+        return max(0.1, round(scaled, 4))
+
+    def _apply_llm_weight_scaling(self, selected_loras: List[Dict[str, Any]]) -> None:
+        """
+        Apply automatic weight scaling to LLM-selected LoRAs.
+
+        Multipliers are based solely on the number of auto-selected LoRAs.
+        Manual overrides (manual_strength) are preserved.
+        """
+        count = len(selected_loras)
+        if count == 0:
+            return
+
+        scale = self._calculate_weight_scale(count)
+
+        for entry in selected_loras:
+            if 'manual_strength' in entry:
+                entry['auto_strength'] = entry.get('manual_strength')
+                entry['auto_strength_clip'] = entry.get('manual_strength_clip', entry.get('manual_strength'))
+                entry['auto_strength_factor'] = 1.0
+                continue
+
+            base_weight = entry.get('default_weight', 1.0)
+            if not isinstance(base_weight, (int, float)):
+                base_weight = 1.0
+
+            adjusted = round(base_weight * scale, 4)
+            entry['auto_strength'] = adjusted
+            entry['auto_strength_clip'] = adjusted
+            entry['auto_strength_factor'] = scale
     
     def _build_selection_json(self, selected_loras: List[Dict[str, Any]], manual_list: List[str]) -> str:
         """Build JSON string of selected LoRAs for debugging."""
@@ -609,6 +664,32 @@ class SmartPowerLoRALoader:
                 if isinstance(trigger, str) and trigger.strip()
             ]
 
+            default_weight = lora.get('default_weight', 1.0)
+            if not isinstance(default_weight, (int, float)):
+                default_weight = 1.0
+
+            manual_strength = lora.get('manual_strength')
+            auto_strength = lora.get('auto_strength')
+            manual_strength_clip = lora.get('manual_strength_clip')
+            auto_strength_clip = lora.get('auto_strength_clip')
+            auto_scale = lora.get('auto_strength_factor', 1.0)
+
+            applied_weight_model = (
+                manual_strength
+                if isinstance(manual_strength, (int, float))
+                else auto_strength
+                if isinstance(auto_strength, (int, float))
+                else default_weight
+            )
+
+            applied_weight_clip = (
+                manual_strength_clip
+                if isinstance(manual_strength_clip, (int, float))
+                else auto_strength_clip
+                if isinstance(auto_strength_clip, (int, float))
+                else applied_weight_model
+            )
+
             output["selected_loras"].append({
                 "file": file_name,
                 "display_name": lora.get('display_name', ''),
@@ -617,9 +698,12 @@ class SmartPowerLoRALoader:
                 "catalog_summary": lora.get('summary') or lora.get('description', ''),
                 "catalog_triggers": catalog_triggers,
                 "catalog_tags": catalog_tags,
-                "default_weight": lora.get('default_weight', 1.0)
+                "default_weight": default_weight,
+                "applied_weight_model": applied_weight_model,
+                "applied_weight_clip": applied_weight_clip,
+                "auto_weight_scale": auto_scale
             })
-        
+
         return json.dumps(output, indent=2)
 
 
