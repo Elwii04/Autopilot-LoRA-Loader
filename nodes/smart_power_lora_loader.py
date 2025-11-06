@@ -3,6 +3,7 @@ SmartPowerLoRALoader Node
 Main ComfyUI custom node that auto-selects LoRAs and generates prompts using LLMs.
 """
 import json
+import random
 from typing import Any, Dict, List, Tuple, Optional, Set
 import sys
 import os
@@ -130,6 +131,12 @@ class SmartPowerLoRALoader:
                     "default": "llm_decides",
                     "tooltip": "Where to place trigger words in the prompt. 'llm_decides' (recommended): AI integrates them naturally. 'start': All triggers at beginning. 'end': All triggers at end."
                 }),
+                "seed": ("INT", {
+                    "default": -1,
+                    "min": -1,
+                    "max": 2147483647,
+                    "tooltip": "Controls when the node is re-run. -1 generates a new seed each queue run so the LLM is always called. Set to a non-negative value to reuse cached results until you change the seed."
+                }),
             }),
             "hidden": {
                 "manual_loras": ("STRING", {
@@ -151,7 +158,49 @@ class SmartPowerLoRALoader:
         self._llm_prompt_request = {}
         self._llm_selection_details = []
         self._llm_prompt_model = ""
-    
+        self._current_seed = None
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        """Control ComfyUI caching so the LLM is re-invoked when desired."""
+        seed_value = kwargs.get("seed", -1)
+
+        if isinstance(seed_value, (list, tuple)):
+            seed_value = seed_value[0] if seed_value else -1
+
+        try:
+            seed_int = int(seed_value)
+        except (TypeError, ValueError):
+            seed_int = -1
+
+        if seed_int < 0:
+            # Negative seed == auto mode; force the node to run every queue execution.
+            return random.random()
+
+        dynamic_entries = []
+        for key in sorted(k for k in kwargs.keys() if isinstance(k, str) and k.upper().startswith("LORA_")):
+            value = kwargs.get(key)
+            if isinstance(value, dict):
+                dynamic_entries.append((key, tuple(sorted(value.items()))))
+            else:
+                dynamic_entries.append((key, str(value)))
+
+        return hash((
+            seed_int,
+            kwargs.get("prompt"),
+            kwargs.get("base_model"),
+            kwargs.get("prompting_model"),
+            kwargs.get("indexing_model"),
+            kwargs.get("custom_instruction"),
+            kwargs.get("system_prompt"),
+            kwargs.get("manual_loras"),
+            kwargs.get("temperature"),
+            kwargs.get("max_loras"),
+            kwargs.get("trigger_position"),
+            kwargs.get("enable_negative_prompt"),
+            tuple(dynamic_entries),
+        ))
+
     def process(
         self,
         prompt: str,
@@ -169,6 +218,7 @@ class SmartPowerLoRALoader:
         max_loras: int = 6,
         trigger_position: str = "llm_decides",
         manual_loras: str = "",
+        seed: int = -1,
         **kwargs  # Capture dynamic lora_* inputs from JavaScript
     ) -> Tuple[Any, Any, str, str, str]:
         """
@@ -181,10 +231,28 @@ class SmartPowerLoRALoader:
         print("\n" + "="*60)
         print("SmartPowerLoRALoader Processing")
         print("="*60)
-        
+
         # Parse provider and model from prefixed strings
         indexing_provider, indexing_model_name = parse_model_string(indexing_model)
         prompting_provider, prompting_model_name = parse_model_string(prompting_model)
+
+        seed_value = seed
+        if isinstance(seed_value, (list, tuple)):
+            seed_value = seed_value[0] if seed_value else -1
+        try:
+            seed_int = int(seed_value)
+        except (TypeError, ValueError):
+            seed_int = -1
+
+        auto_seed = seed_int < 0
+        if auto_seed:
+            seed_int = random.randint(0, 2147483647)
+
+        self._current_seed = seed_int
+        if auto_seed:
+            print(f"[SmartPowerLoRALoader] Using auto-generated seed: {seed_int}")
+        else:
+            print(f"[SmartPowerLoRALoader] Using provided seed: {seed_int}")
         
         # Step 1: Reindex if needed
         if reindex_on_run and not self.indexing_done:
@@ -542,6 +610,7 @@ class SmartPowerLoRALoader:
         else:
             debug_prompt = {"composed_prompt": raw_prompt}
         debug_prompt.setdefault('model', self._llm_prompt_model)
+        debug_prompt.setdefault('seed', self._current_seed)
         self._llm_prompt_request = debug_prompt
         
         truncated_selection = []
@@ -638,7 +707,8 @@ class SmartPowerLoRALoader:
             "selected_loras": [],
             "llm_prompt": prompt_debug,
             "llm_selection_details": selection_details,
-            "llm_model": llm_model
+            "llm_model": llm_model,
+            "run_seed": getattr(self, "_current_seed", None)
         }
         
         for lora in selected_loras:
