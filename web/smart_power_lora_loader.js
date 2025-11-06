@@ -935,6 +935,25 @@ app.registerExtension({
                         return manualLoras.join(',');
                     };
                 }
+
+                const seedWidget = this.widgets?.find(w => w.name === "seed");
+                if (seedWidget) {
+                    console.log("[Autopilot LoRA] Found seed widget, enhancing presentation");
+                    seedWidget.label = "Seed (auto-refresh when -1)";
+                    seedWidget.tooltip = "Set to -1 to generate a new seed each queue run so the LLM prompt refreshes. Use 0 or higher to reuse cached results.";
+                    if (typeof seedWidget.min === "number") {
+                        seedWidget.min = -1;
+                    }
+                    const promptWidgetIndex = this.widgets.findIndex(w => w.name === "prompt");
+                    const seedIndex = this.widgets.indexOf(seedWidget);
+                    if (promptWidgetIndex >= 0 && seedIndex > promptWidgetIndex + 1) {
+                        console.log("[Autopilot LoRA] Moving seed widget closer to prompt input");
+                        this.widgets.splice(seedIndex, 1);
+                        this.widgets.splice(promptWidgetIndex + 1, 0, seedWidget);
+                    }
+                } else {
+                    console.warn("[Autopilot LoRA] Seed widget not found; using default auto-seed behaviour.");
+                }
                 
                 // Store manual LoRA widgets
                 this.manualLoraWidgets = [];

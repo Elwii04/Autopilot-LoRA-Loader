@@ -59,30 +59,25 @@ def build_candidate_list_text(
         summary = lora.get('summary') or lora.get('display_name', '')
         description = lora.get('description', '')
         triggers = lora.get('trained_words', []) or []
-        tags = lora.get('tags', []) or []
-        display_name = lora.get('display_name', '')
         
         lines.append(f"{i+1}. File: {lora['file']}")
-        if display_name and display_name != summary:
-            lines.append(f"   Display name: {display_name}")
         if summary:
             lines.append(f"   Summary: {summary}")
         if description:
             lines.append(f"   Creator notes: {description}")
         if triggers:
             lines.append(f"   Trigger words: {', '.join(triggers[:8])}")
-        if tags:
-            lines.append(f"   Tags: {', '.join(tags[:6])}")
         lines.append("")
         
         structured.append({
             "file": lora['file'],
-            "display_name": display_name,
             "summary": summary,
             "creator_notes": description,
-            "trigger_words": triggers[:8],
-            "tags": tags[:6]
+            "trigger_words": triggers[:8]
         })
+    
+    if not candidates:
+        lines.append("None available for the current request.")
     
     formatted_text = '\n'.join(lines).strip()
     return formatted_text, structured
@@ -94,7 +89,8 @@ def create_prompting_prompt(
     has_image: bool = False,
     max_loras: int = 6,
     trigger_position: str = "llm_decides",
-    include_negative_prompt: bool = False
+    include_negative_prompt: bool = False,
+    selection_enabled: bool = True
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Create the prompting prompt.
@@ -106,11 +102,15 @@ def create_prompting_prompt(
         max_loras: Maximum LoRAs to select
         trigger_position: Placement rule for trigger words
         include_negative_prompt: Whether a negative prompt should be generated
+        selection_enabled: Whether LoRA selection should be performed
         
     Returns:
         Tuple of (full prompt for LLM, structured metadata for debugging)
     """
-    candidate_text, candidate_metadata = build_candidate_list_text(candidates)
+    if selection_enabled:
+        candidate_text, candidate_metadata = build_candidate_list_text(candidates)
+    else:
+        candidate_text, candidate_metadata = "", []
     
     json_template = build_prompting_json_template(include_negative_prompt)
     
@@ -124,34 +124,49 @@ def create_prompting_prompt(
     reference_image_text = "Yes" if has_image else "No"
     negative_prompt_text = "Yes" if include_negative_prompt else "No"
     
-    prompt = f"""=== Task Context ===
-User request:
-{base_context.strip() or "[empty prompt provided]"}
-
-Reference image provided: {reference_image_text}
-Negative prompt requested: {negative_prompt_text}
-
-=== Candidate Catalog ===
-{candidate_text}
-
-=== Constraints ===
-- Maximum LoRAs to return: {max_loras}
-- {trigger_note}
-- Trigger words must match the exact wording listed under each candidate's "Trigger words" line.
-- Use the provided summaries and creator notes to justify each selection.
-
-=== JSON Response Template ===
-{json_template}
-
-Return only the completed JSON object (no extra commentary)."""
+    sections: List[str] = [
+        "=== Task Context ===",
+        "User request:",
+        base_context.strip() or "[empty prompt provided]",
+        "",
+        f"Reference image provided: {reference_image_text}",
+        f"Negative prompt requested: {negative_prompt_text}",
+        ""
+    ]
+    
+    if selection_enabled:
+        sections.append("=== Candidate Catalog ===")
+        sections.append(candidate_text or "No catalog entries available for this request.")
+        sections.append("")
+        sections.append("=== Constraints ===")
+        sections.extend([
+            f"- You may select up to {max_loras} LoRA{'s' if max_loras != 1 else ''}. Choose fewer or none if nothing is appropriate.",
+            f"- {trigger_note}",
+            "- Keep LoRA trigger words concise: weave them into the prompt so roughly 90% of the text is natural descriptive language and no more than 10% are trigger tokens.",
+            '- Trigger words must match the exact wording shown under each candidate\'s "Trigger words" line.',
+            "- Use the provided summaries and creator notes to justify any selections you make."
+        ])
+        sections.append("")
+    else:
+        sections.append("=== Prompting Notes ===")
+        sections.append("LoRA auto-selection is disabled for this run. Ignore LoRA selection steps and leave the `selected_loras` array empty while still following the JSON template.")
+        sections.append("")
+    
+    sections.append("=== JSON Response Template ===")
+    sections.append(json_template)
+    sections.append("")
+    sections.append("Return only the completed JSON object (no extra commentary).")
+    
+    prompt = "\n".join(sections)
     
     metadata = {
         "user_request": base_context.strip(),
         "reference_image_provided": has_image,
         "negative_prompt_requested": include_negative_prompt,
         "max_loras": max_loras,
-        "trigger_rule": trigger_note,
-        "candidate_catalog": candidate_metadata,
+        "trigger_rule": trigger_note if selection_enabled else "LoRA selection disabled",
+        "candidate_catalog": candidate_metadata if selection_enabled else [],
+        "selection_enabled": selection_enabled,
         "json_template": json_template
     }
     
@@ -232,7 +247,8 @@ def prompt_with_llm(
     custom_instruction: str = "",
     max_loras: int = 6,
     trigger_position: str = "llm_decides",
-    include_negative_prompt: bool = False
+    include_negative_prompt: bool = False,
+    selection_enabled: bool = True
 ) -> tuple[bool, Optional[Dict[str, Any]], str]:
     """
     Use LLM to select LoRAs and generate prompt.
@@ -251,6 +267,7 @@ def prompt_with_llm(
         max_loras: Maximum number of LoRAs the LLM may select
         trigger_position: Desired placement for trigger words
         include_negative_prompt: Whether to request a negative prompt
+        selection_enabled: Whether the LLM should perform LoRA selection
         
     Returns:
         Tuple of (success, result_dict, error_message)
@@ -279,13 +296,21 @@ def prompt_with_llm(
     else:
         print("[PromptingLLM] Using provided custom instruction for prompt style")
     
-    selection_instruction = build_selection_instruction(max_loras, trigger_position, include_negative_prompt)
-    instruction_block = (
-        "=== Selection Directives ===\n"
-        f"{selection_instruction.strip()}\n\n"
+    selection_instruction = build_selection_instruction(
+        max_loras,
+        trigger_position,
+        include_negative_prompt,
+        selection_enabled=selection_enabled
+    )
+    instruction_sections = []
+    if selection_instruction.strip():
+        header = "Selection Directives" if selection_enabled else "Prompt Directives"
+        instruction_sections.append(f"=== {header} ===\n{selection_instruction.strip()}")
+    instruction_sections.append(
         "=== Prompt Writing Style ===\n"
         f"{user_style_instruction.strip()}"
     )
+    instruction_block = "\n\n".join(instruction_sections)
     
     # Build prompt
     has_image = image is not None
@@ -295,7 +320,8 @@ def prompt_with_llm(
         has_image=has_image,
         max_loras=max_loras,
         trigger_position=trigger_position,
-        include_negative_prompt=include_negative_prompt
+        include_negative_prompt=include_negative_prompt,
+        selection_enabled=selection_enabled
     )
     prompt = f"{instruction_block}\n\n{prompt_body}"
     prompt_payload = prompt  # Keep full text sent to the LLM for debugging
@@ -344,21 +370,31 @@ def prompt_with_llm(
         return False, None, "Failed to parse LLM response as valid JSON"
     
     # Validate that selected LoRAs exist in candidates
-    candidate_names = {c['file'] for c in candidates}
-    validated_loras = []
-    
-    for selected in result['selected_loras']:
-        if selected['name'] in candidate_names:
-            validated_loras.append(selected)
-        else:
-            print(f"[PromptingLLM] Warning: LLM selected non-existent LoRA: {selected['name']}")
-    
-    result['selected_loras'] = validated_loras
+    if selection_enabled:
+        candidate_names = {c['file'] for c in candidates}
+        validated_loras = []
+        
+        for selected in result['selected_loras']:
+            if selected['name'] in candidate_names:
+                validated_loras.append(selected)
+            else:
+                print(f"[PromptingLLM] Warning: LLM selected non-existent LoRA: {selected['name']}")
+        
+        result['selected_loras'] = validated_loras
+    else:
+        if result['selected_loras']:
+            print("[PromptingLLM] Ignoring selected LoRAs because auto-selection is disabled.")
+        result['selected_loras'] = []
     result['raw_prompt'] = prompt_payload
     result['prompt_metadata'] = prompt_debug
     
     return True, result, ""
-def build_selection_instruction(max_loras: int, trigger_position: str, include_negative_prompt: bool) -> str:
+def build_selection_instruction(
+    max_loras: int,
+    trigger_position: str,
+    include_negative_prompt: bool,
+    selection_enabled: bool = True
+) -> str:
     """Create the core instructions for LoRA selection and formatting."""
     trigger_position = (trigger_position or "llm_decides").lower()
     trigger_guidance_map = {
@@ -373,10 +409,13 @@ def build_selection_instruction(max_loras: int, trigger_position: str, include_n
     else:
         negative_guidance = "Only provide a positive prompt. Do not include a negative prompt or a negative prompt field in the JSON."
     
+    if not selection_enabled:
+        return f"""LoRA selection is disabled for this run. Leave the `selected_loras` array empty and focus on crafting the best possible prompt for the user's request. {negative_guidance}"""
+    
     return f"""LoRA Selection Rules:
-- Review the supplied catalog entries and choose up to {max_loras} LoRAs that best support the user's request.
-- Each selected LoRA MUST come from the provided list (use exact filenames) and include the trigger words the LoRA expects.
-- When no LoRA is appropriate, return an empty list.
+- Review the supplied catalog entries and choose at most {max_loras} LoRA{'s' if max_loras != 1 else ''} that genuinely enhance the user's request; selecting none is perfectly acceptable.
+- Each selected LoRA MUST come from the provided list (use exact filenames) and include only the trigger words expected by that LoRA.
+- Integrate triggers where they make sense instead of front-loading them. Keep the positive prompt roughly 90% descriptive language and at most 10% trigger words so the prose remains natural.
 
 Trigger Placement Requirement:
 - {trigger_guidance}

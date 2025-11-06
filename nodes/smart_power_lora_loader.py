@@ -123,9 +123,9 @@ class SmartPowerLoRALoader:
                 }),
                 "max_loras": ("INT", {
                     "default": 6,
-                    "min": 1,
+                    "min": 0,
                     "max": 20,
-                    "tooltip": "Maximum number of LoRAs to auto-select. More LoRAs = more complex generations but can cause conflicts. Recommended: 3-6 for best results. Character LoRAs don't count toward this limit."
+                    "tooltip": "Maximum number of LoRAs to auto-select. Set to 0 to disable auto-selection and use the node as a pure prompting helper. Recommended: 3-6 for best results when enabled."
                 }),
                 "trigger_position": (["llm_decides", "start", "end"], {
                     "default": "llm_decides",
@@ -235,6 +235,14 @@ class SmartPowerLoRALoader:
         # Parse provider and model from prefixed strings
         indexing_provider, indexing_model_name = parse_model_string(indexing_model)
         prompting_provider, prompting_model_name = parse_model_string(prompting_model)
+
+        try:
+            max_loras = int(max_loras)
+        except (TypeError, ValueError):
+            max_loras = 0
+        if max_loras < 0:
+            max_loras = 0
+        selection_enabled = max_loras > 0
 
         seed_value = seed
         if isinstance(seed_value, (list, tuple)):
@@ -359,6 +367,7 @@ class SmartPowerLoRALoader:
             init_image=image,
             temperature=temperature,
             max_loras=max_loras,
+            selection_enabled=selection_enabled,
             system_prompt=system_prompt,
             custom_instruction=custom_instruction,
             trigger_position=trigger_position,
@@ -533,6 +542,7 @@ class SmartPowerLoRALoader:
         init_image: Any,
         temperature: float,
         max_loras: int,
+        selection_enabled: bool,
         system_prompt: str = "",
         custom_instruction: str = "",
         trigger_position: str = "llm_decides",
@@ -543,24 +553,26 @@ class SmartPowerLoRALoader:
         self._llm_prompt_request = {}
         self._llm_selection_details = []
         self._llm_prompt_model = f"{prompting_provider}: {prompting_model}"
+        selection_enabled = bool(selection_enabled and max_loras > 0)
+        effective_max = max_loras if selection_enabled else 0
         
         # Parse allowlist
         allowlist = self._parse_lora_list(allowlist_loras)
         
-        # Get candidates
-        candidates = get_candidates_for_autoselect(
-            catalog_entries=lora_catalog.get_all_entries(),
-            base_model_family=base_model,
-            allowlist=allowlist,
-            base_context=base_context,
-            max_candidates=30
-        )
-        
-        print(f"[Auto-Select] Found {len(candidates)} candidates")
-        
-        if not candidates:
-            print("[Auto-Select] No candidates available")
-            return []
+        if selection_enabled:
+            candidates = get_candidates_for_autoselect(
+                catalog_entries=lora_catalog.get_all_entries(),
+                base_model_family=base_model,
+                allowlist=allowlist,
+                base_context=base_context,
+                max_candidates=30
+            )
+            print(f"[Auto-Select] Found {len(candidates)} candidates")
+            if not candidates:
+                print("[Auto-Select] No candidates available; will still generate a prompt.")
+        else:
+            candidates = []
+            print("[Auto-Select] LoRA selection disabled (max_loras=0); running prompt-only mode.")
         
         # Get API key
         if prompting_provider == "groq":
@@ -569,10 +581,14 @@ class SmartPowerLoRALoader:
             api_key = config.get_gemini_api_key()
         else:
             print(f"[Auto-Select] Unknown provider: {prompting_provider}")
+            self._llm_generated_prompt = base_context
+            self._llm_generated_negative = ""
             return []
         
         if not api_key:
             print(f"[Auto-Select] No API key for {prompting_provider}")
+            self._llm_generated_prompt = base_context
+            self._llm_generated_negative = ""
             return []
         
         # Call LLM
@@ -589,13 +605,16 @@ class SmartPowerLoRALoader:
             custom_instruction=custom_instruction,
             max_loras=max_loras,
             trigger_position=trigger_position,
-            include_negative_prompt=include_negative_prompt
+            include_negative_prompt=include_negative_prompt,
+            selection_enabled=selection_enabled
         )
         
         if not success:
             print(f"[Auto-Select] LLM error: {error}")
             self._llm_prompt_request = {}
             self._llm_selection_details = []
+            self._llm_generated_prompt = base_context
+            self._llm_generated_negative = ""
             return []
         
         # Store LLM-generated prompt
@@ -614,16 +633,20 @@ class SmartPowerLoRALoader:
         self._llm_prompt_request = debug_prompt
         
         truncated_selection = []
-        for entry in result.get('selected_loras', [])[:max_loras]:
-            if not isinstance(entry, dict):
-                continue
-            entry_copy = {
-                "name": entry.get('name', ''),
-                "used_triggers": list(entry.get('used_triggers', [])) if isinstance(entry.get('used_triggers'), list) else []
-            }
-            truncated_selection.append(entry_copy)
+        if selection_enabled:
+            for entry in result.get('selected_loras', [])[:effective_max]:
+                if not isinstance(entry, dict):
+                    continue
+                entry_copy = {
+                    "name": entry.get('name', ''),
+                    "used_triggers": list(entry.get('used_triggers', [])) if isinstance(entry.get('used_triggers'), list) else []
+                }
+                truncated_selection.append(entry_copy)
         self._llm_selection_details = truncated_selection
         
+        if not selection_enabled or not truncated_selection:
+            return []
+
         # Resolve selected LoRAs
         selected = resolve_selected_loras_from_llm(
             llm_selection=truncated_selection,
